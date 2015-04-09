@@ -158,7 +158,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Unable to make client: %v", err))
 		return
 	}
-	defer func() { client.Close() }()
+	defer client.Close()
 
 	var parts []int32
 	parts, err = client.Partitions(kafka.Topic)
@@ -180,7 +180,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Unable to make producer: %v", err))
 		return
 	}
-	defer func() { producer.Close() }()
+	defer producer.Close()
 
 	_, kafka.Offset, err = producer.SendMessage(&sarama.ProducerMessage{
 		Topic:     kafka.Topic,
@@ -233,7 +233,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Unable to make client: %v", err))
 		return
 	}
-	defer func() { client.Close() }()
+	defer client.Close()
 
 	var parts []int32
 	parts, err = client.Partitions(o.Query.Topic)
@@ -271,7 +271,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Unable to make consumer: %v", err))
 		return
 	}
-	defer func() { consumer.Close() }()
+	defer consumer.Close()
 
 	var pc sarama.PartitionConsumer
 	pc, err = consumer.ConsumePartition(o.Query.Topic, o.Query.Partition, o.Query.Offset)
@@ -280,7 +280,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Unable to make partition consumer: %v", err))
 		return
 	}
-	defer func() { pc.Close() }()
+	defer pc.Close()
 
 	for msg := range pc.Messages() {
 		var m interface{}
