@@ -83,10 +83,10 @@ func (s *Server) successResponse(w http.ResponseWriter, m interface{}) {
 	s.writeResponse(w, http.StatusOK, resp)
 }
 
-func (s *Server) errorResponse(w http.ResponseWriter, status int, m string) {
+func (s *Server) errorResponse(w http.ResponseWriter, status int, format string, args ...interface{}) {
 	resp := &JsonResponse{
 		Status: "error",
-		Data:   m,
+		Data:   fmt.Sprintf(format, args...),
 	}
 	s.writeResponse(w, status, resp)
 }
@@ -136,8 +136,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 
 	msg, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Unable to read body: %s", err))
+		s.errorResponse(w, http.StatusBadRequest, "Unable to read body: %s", err)
 		return
 	}
 
@@ -149,16 +148,14 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	config := newKafkaConfig()
 	client, err := sarama.NewClient(s.BrokerList, config)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Unable to make client: %v", err))
+		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
 
 	parts, err := client.Partitions(kafka.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Unable to get partitions for topic: %v", err))
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -169,8 +166,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 
 	producer, err := sarama.NewSyncProducerFromClient(client)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("Unable to make producer: %v", err))
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to make producer: %v", err)
 		return
 	}
 	defer producer.Close()
@@ -182,8 +178,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Failed to store your data: %v", err))
+		s.errorResponse(w, http.StatusBadRequest, "Unable to store your data: %v", err)
 		return
 	}
 
@@ -220,16 +215,14 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := sarama.NewClient(s.BrokerList, config)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Unable to make client: %v", err))
+		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
 
 	parts, err := client.Partitions(o.Query.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Unable to get partitions for topic: %v", err))
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -240,41 +233,36 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	lastOffset, err := client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("Unable to get offset: %v", err))
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
 	}
 
 	lastOffset--
 
 	if o.Query.Offset >= lastOffset {
-		s.errorResponse(w, http.StatusBadRequest,
-			fmt.Sprintf("Offset out of range: %v", lastOffset))
+		s.errorResponse(w, http.StatusBadRequest, "Offset out of range: %v", lastOffset)
 		return
 	}
 
 	consumer, err := sarama.NewConsumerFromClient(client)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("Unable to make consumer: %v", err))
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
 		return
 	}
 	defer consumer.Close()
 
 	pc, err := consumer.ConsumePartition(o.Query.Topic, o.Query.Partition, o.Query.Offset)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError,
-			fmt.Sprintf("Unable to make partition consumer: %v", err))
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to make partition consumer: %v", err)
 		return
 	}
 	defer pc.Close()
 
 	for msg := range pc.Messages() {
 		var m interface{}
-		err = json.Unmarshal(msg.Value, &m)
-		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError,
-				fmt.Sprintf("Unable to unmarshal: %v", err))
+
+		if err := json.Unmarshal(msg.Value, &m); err != nil {
+			s.errorResponse(w, http.StatusInternalServerError, "Bad JSON: %v", err)
 			return
 		}
 		o.Messages = append(o.Messages, m)
