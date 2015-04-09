@@ -134,10 +134,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		Offset:    -1,
 	}
 
-	var err error
-
-	var msg []byte
-	msg, err = ioutil.ReadAll(r.Body)
+	msg, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Unable to read body: %s", err))
@@ -149,10 +146,8 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var client sarama.Client
-
 	config := newKafkaConfig()
-	client, err = sarama.NewClient(s.BrokerList, config)
+	client, err := sarama.NewClient(s.BrokerList, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Unable to make client: %v", err))
@@ -160,8 +155,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	var parts []int32
-	parts, err = client.Partitions(kafka.Topic)
+	parts, err := client.Partitions(kafka.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Unable to get partitions for topic: %v", err))
@@ -173,8 +167,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var producer sarama.SyncProducer
-	producer, err = sarama.NewSyncProducerFromClient(client)
+	producer, err := sarama.NewSyncProducerFromClient(client)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("Unable to make producer: %v", err))
@@ -223,11 +216,9 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	length := toInt64(varsLength)
 
-	var err error
-	var client sarama.Client
-
 	config := newKafkaConfig()
-	client, err = sarama.NewClient(s.BrokerList, config)
+
+	client, err := sarama.NewClient(s.BrokerList, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Unable to make client: %v", err))
@@ -235,8 +226,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	var parts []int32
-	parts, err = client.Partitions(o.Query.Topic)
+	parts, err := client.Partitions(o.Query.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest,
 			fmt.Sprintf("Unable to get partitions for topic: %v", err))
@@ -248,8 +238,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var lastOffset int64
-	lastOffset, err = client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
+	lastOffset, err := client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("Unable to get offset: %v", err))
@@ -264,8 +253,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var consumer sarama.Consumer
-	consumer, err = sarama.NewConsumerFromClient(client)
+	consumer, err := sarama.NewConsumerFromClient(client)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("Unable to make consumer: %v", err))
@@ -273,8 +261,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer consumer.Close()
 
-	var pc sarama.PartitionConsumer
-	pc, err = consumer.ConsumePartition(o.Query.Topic, o.Query.Partition, o.Query.Offset)
+	pc, err := consumer.ConsumePartition(o.Query.Topic, o.Query.Partition, o.Query.Offset)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError,
 			fmt.Sprintf("Unable to make partition consumer: %v", err))
