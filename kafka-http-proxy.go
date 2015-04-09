@@ -276,6 +276,55 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, o)
 }
 
+func (s *Server) GetLastOffsetHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	varsTopic := vars["topic"]
+	varsPartition := toInt32("-1")
+
+	if r.FormValue("partition") != "" {
+		varsPartition = toInt32(r.FormValue("partition"))
+	}
+
+	config := newKafkaConfig()
+
+	client, err := sarama.NewClient(s.BrokerList, config)
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
+		return
+	}
+	defer client.Close()
+
+	parts, err := client.Partitions(varsTopic)
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
+		return
+	}
+
+	if varsPartition > 0 && !inSlice(varsPartition, parts) {
+		s.errorResponse(w, http.StatusBadRequest, "Partition not found")
+		return
+	}
+
+	var partitionsOffset []int64
+	for i := range parts {
+		i32 := int32(i)
+		if varsPartition > 0 && i32 != varsPartition {
+			continue
+		}
+		lastOffset, err := client.GetOffset(varsTopic, i32, sarama.OffsetNewest)
+		if err != nil {
+			s.errorResponse(w, http.StatusInternalServerError,
+				"Unable to get offset: %v", err)
+			return
+		}
+
+		partitionsOffset = append(partitionsOffset, lastOffset)
+	}
+
+	s.successResponse(w, partitionsOffset)
+}
+
 func (s *Server) Run(addr string) error {
 	r := mux.NewRouter()
 	r.NotFoundHandler = http.HandlerFunc(s.NotFoundHandler)
@@ -284,6 +333,9 @@ func (s *Server) Run(addr string) error {
 		Methods("POST")
 
 	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9]+}/{partition:[0-9]+}", s.GetHandler).
+		Methods("GET")
+
+	r.HandleFunc("/v1/lastoffset/{topic:[A-Za-z0-9]+}", s.GetLastOffsetHandler).
 		Methods("GET")
 
 	r.HandleFunc("/", s.RootHandler).
