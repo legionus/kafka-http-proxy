@@ -296,6 +296,9 @@ func (s *Server) Run(addr string) error {
 		Handler: handlers.LoggingHandler(os.Stdout, r),
 	}
 
+	if s.Verbose {
+		log.Println("Server ready")
+	}
 	return httpServer.ListenAndServe()
 }
 
@@ -334,6 +337,8 @@ func toInt64(s string) int64 {
 }
 
 func main() {
+	log.SetPrefix("[server] ")
+
 	flag.Parse()
 
 	if *verbose {
