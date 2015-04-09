@@ -3,7 +3,7 @@
 *
 * This file is covered by the GNU General Public License,
 * which should be included with kafka-http-proxy as the file COPYING.
-*/
+ */
 
 package main
 
@@ -68,7 +68,7 @@ func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JsonRespons
 	b, err := json.Marshal(v)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Unable to marshal result:", err)
+		fmt.Fprintf(w, "Unable to marshal result: %v", err)
 	}
 
 	w.WriteHeader(status)
