@@ -48,6 +48,19 @@ type ResponseMessages struct {
 	Messages []interface{}   `json:"messages"`
 }
 
+type ResponsePartitionInfo struct {
+	Topic     string `json:"topic"`
+	Partition int32  `json:"partition"`
+	Leader    string `json:"leader"`
+	Offset    int64  `json:"offset"`
+	Writable  bool   `json:"writable"`
+}
+
+type ResponseTopicListInfo struct {
+	Topic      string `json:"topic"`
+	Partitions int    `json:"partitions"`
+}
+
 type Server struct {
 	Verbose    bool
 	BrokerList []string
@@ -101,21 +114,35 @@ func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
     <title>Endpoints | Kafka API v1</title>
   </head>
   <body>
-    <div class="container"><div class="row"><div class="col-md-10">
-      <h2>Kafka API v1</h2><br>
+    <div class="container"><h2>Kafka API v1</h2><br>
         <table class="table">
           <tr>
-            <th><p class="text-right">Write to Kafka</p></th>
-            <td><p>POST</p></td>
-            <td><p><code>{schema}://{host}/v1/topics/{topic}/{partition}</code></p></td>
+            <th class="text-right">Write to Kafka</p></th>
+            <td>POST</td>
+            <td><code>{schema}://{host}/v1/topics/{topic}/{partition}</code></td>
           </tr>
           <tr>
-            <th><p class="text-right">Read from Kafka</p></th>
-            <td><p>GET</p></td>
-            <td><p><code>{schema}://{host}/v1/topics/{topic}/{partition}?offset={offset}&limit={limit}</code></p></td>
+            <th class="text-right">Read from Kafka</th>
+            <td>GET</td>
+            <td><code>{schema}://{host}/v1/topics/{topic}/{partition}?offset={offset}&limit={limit}</code></td>
+          </tr>
+          <tr>
+            <th class="text-right">Obtain topic list</th>
+            <td>GET</td>
+            <td><code>{schema}://{host}/v1/info/topics</code></td>
+          </tr>
+          <tr>
+            <th class="text-right">Obtain information about all partitions in topic</th>
+            <td>GET</td>
+            <td><code>{schema}://{host}/v1/info/topics/{topic}</code></td>
+          </tr>
+          <tr>
+            <th class="text-right">Obtain information about partition</th>
+            <td>GET</td>
+            <td><code>{schema}://{host}/v1/info/topics/{topic}/{partition}</code></td>
           </tr>
         </table>
-    </div></div></div>
+    </div>
   </body>
 </html>`)
 	t.Execute(w, nil)
@@ -276,17 +303,10 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, o)
 }
 
-func (s *Server) GetLastOffsetHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-
-	varsTopic := vars["topic"]
-	varsPartition := toInt32("-1")
-
-	if r.FormValue("partition") != "" {
-		varsPartition = toInt32(r.FormValue("partition"))
-	}
-
+func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 	config := newKafkaConfig()
+
+	res := []ResponseTopicListInfo{}
 
 	client, err := sarama.NewClient(s.BrokerList, config)
 	if err != nil {
@@ -295,34 +315,118 @@ func (s *Server) GetLastOffsetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	parts, err := client.Partitions(varsTopic)
+	topics, err := client.Topics()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get topics: %v", err)
 		return
 	}
 
-	if varsPartition > 0 && !inSlice(varsPartition, parts) {
-		s.errorResponse(w, http.StatusBadRequest, "Partition not found")
-		return
-	}
-
-	var partitionsOffset []int64
-	for i := range parts {
-		i32 := int32(i)
-		if varsPartition > 0 && i32 != varsPartition {
-			continue
-		}
-		lastOffset, err := client.GetOffset(varsTopic, i32, sarama.OffsetNewest)
+	for _, topic := range topics {
+		parts, err := client.Partitions(topic)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError,
-				"Unable to get offset: %v", err)
+			s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
+			return
+		}
+		info := &ResponseTopicListInfo{
+			Topic:      topic,
+			Partitions: len(parts),
+		}
+		res = append(res, *info)
+	}
+
+	s.successResponse(w, res)
+}
+
+func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	res := &ResponsePartitionInfo{
+		Topic:     vars["topic"],
+		Partition: toInt32(vars["partition"]),
+	}
+
+	config := newKafkaConfig()
+	client, err := sarama.NewClient(s.BrokerList, config)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
+		return
+	}
+	defer client.Close()
+
+	broker, err := client.Leader(res.Topic, res.Partition)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
+		return
+	}
+
+	res.Leader = broker.Addr()
+
+	res.Offset, err = client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
+		return
+	}
+
+	wp, err := client.WritablePartitions(res.Topic)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
+		return
+	}
+
+	res.Writable = inSlice(res.Partition, wp)
+
+	s.successResponse(w, res)
+}
+
+func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	res := []ResponsePartitionInfo{}
+
+	config := newKafkaConfig()
+	client, err := sarama.NewClient(s.BrokerList, config)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
+		return
+	}
+	defer client.Close()
+
+	writable, err := client.WritablePartitions(vars["topic"])
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
+		return
+	}
+
+	parts, err := client.Partitions(vars["topic"])
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
+		return
+	}
+
+	for partition := range parts {
+		r := &ResponsePartitionInfo{
+			Topic:     vars["topic"],
+			Partition: int32(partition),
+			Writable:  inSlice(int32(partition), writable),
+		}
+
+		broker, err := client.Leader(r.Topic, r.Partition)
+		if err != nil {
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
+			return
+		}
+		r.Leader = broker.Addr()
+
+		r.Offset, err = client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
+		if err != nil {
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 			return
 		}
 
-		partitionsOffset = append(partitionsOffset, lastOffset)
+		res = append(res, *r)
 	}
 
-	s.successResponse(w, partitionsOffset)
+	s.successResponse(w, res)
 }
 
 func (s *Server) Run(addr string) error {
@@ -335,7 +439,13 @@ func (s *Server) Run(addr string) error {
 	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9]+}/{partition:[0-9]+}", s.GetHandler).
 		Methods("GET")
 
-	r.HandleFunc("/v1/lastoffset/{topic:[A-Za-z0-9]+}", s.GetLastOffsetHandler).
+	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9]+}/{partition:[0-9]+}", s.GetPartitionInfoHandler).
+		Methods("GET")
+
+	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9]+}", s.GetTopicInfoHandler).
+		Methods("GET")
+
+	r.HandleFunc("/v1/info/topics", s.GetTopicListHandler).
 		Methods("GET")
 
 	r.HandleFunc("/", s.RootHandler).
@@ -379,12 +489,18 @@ func inSlice(n int32, list []int32) bool {
 }
 
 func toInt32(s string) int32 {
-	i, _ := strconv.ParseInt(s, 10, 32)
+	i, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return 0
+	}
 	return int32(i)
 }
 
 func toInt64(s string) int64 {
-	i, _ := strconv.ParseInt(s, 10, 64)
+	i, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0
+	}
 	return i
 }
 
