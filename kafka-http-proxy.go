@@ -101,6 +101,9 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 		Status: "error",
 		Data:   fmt.Sprintf(format, args...),
 	}
+	if s.Verbose {
+		log.Printf("Error [%d]: %s\n", status, resp.Data)
+	}
 	s.writeResponse(w, status, resp)
 }
 
