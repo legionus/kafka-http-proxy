@@ -237,6 +237,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 			Partition: toInt32(vars["partition"]),
 			Offset:    toInt64(varsOffset),
 		},
+		Messages: []interface{}{},
 	}
 
 	length := toInt64(varsLength)
@@ -270,6 +271,11 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	lastOffset--
 
 	if o.Query.Offset >= lastOffset {
+		if o.Query.Offset == 0 {
+			// Topic is empty
+			s.successResponse(w, o)
+			return
+		}
 		s.errorResponse(w, http.StatusBadRequest, "Offset out of range: %v", lastOffset)
 		return
 	}
