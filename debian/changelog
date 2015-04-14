@@ -1,0 +1,5 @@
+kafka-http-proxy (0.1.0) unstable; urgency=low
+
+  * Initial Release.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 14 Apr 2015 13:47:27 +0300

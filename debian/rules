@@ -1,0 +1,28 @@
+#!/usr/bin/make -f
+
+PROJECT = kafka-http-proxy
+PROJECT_URL = github.com/legionus/$(PROJECT)
+PROJECT_DIR = $(dir $(PROJECT_URL))
+
+DEBIAN_DIR = $(CURDIR)/debian
+GOPATH = $(CURDIR)/Godeps/_workspace
+
+%:
+	dh $@
+
+#override_dh_auto_clean:
+#	rm -rf -- $(CURDIR)/Godeps
+
+override_dh_auto_configure:
+	mkdir -p -- $(GOPATH)/src/$(PROJECT_DIR)
+	cd $(GOPATH)/src/$(PROJECT_DIR); ln -sf $(CURDIR)
+
+override_dh_auto_build:
+	cd $(GOPATH)/src/$(PROJECT_URL); go get ./...
+
+override_dh_install:
+	install -d $(DEBIAN_DIR)/$(PROJECT)/usr/sbin
+	install -m 755 $(GOPATH)/bin/* $(DEBIAN_DIR)/$(PROJECT)/usr/sbin
+	install -d $(DEBIAN_DIR)/$(PROJECT)/etc/init
+	install -m 644 $(DEBIAN_DIR)/kafka-http-proxy.conf.init $(DEBIAN_DIR)/$(PROJECT)/etc/init/kafka-http-proxy.conf
+	install -m 644 $(DEBIAN_DIR)/khp.cfg $(DEBIAN_DIR)/$(PROJECT)/etc/khp.cfg

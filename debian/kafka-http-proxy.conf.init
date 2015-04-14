@@ -1,0 +1,6 @@
+description "Kafka HTTP proxy"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+exec /usr/sbin/kafka-http-proxy -config=/etc/khp.cfg 2>&1 >/var/log/kafka-http-proxy.log

@@ -1,0 +1,19 @@
+This package was debianized by Alexey Gladkov <gladkov.alexey@gmail.com> on
+Tue, 14 Apr 2015 13:47:27 +0300.
+
+It was downloaded from <https://github.com/legionus/kafka-http-proxy>
+
+Upstream Author(s):
+
+    Alexey Gladkov <gladkov.alexey@gmail.com>
+
+Copyright:
+
+    <Copyright (C) 2015 Alexey Gladkov
+
+License:
+
+    GNU General Public License version 2.
+
+The Debian packaging is (C) 2015, Alexey Gladkov <gladkov.alexey@gmail.com> and
+is licensed under the GPL, see `/usr/share/common-licenses/GPL'.
