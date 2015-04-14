@@ -8,6 +8,7 @@
 package main
 
 import (
+	"code.google.com/p/gcfg"
 	"github.com/Shopify/sarama"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -27,8 +28,9 @@ import (
 )
 
 var (
-	addr    = flag.String("addr", ":8080", "The address to bind to")
+	addr    = flag.String("addr", "", "The address to bind to")
 	brokers = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
+	config  = flag.String("config", "", "Path to configuration file")
 	verbose = flag.Bool("verbose", false, "Turn on Sarama logging")
 )
 
@@ -61,9 +63,18 @@ type ResponseTopicListInfo struct {
 	Partitions int    `json:"partitions"`
 }
 
+type Config struct {
+	Global struct {
+		Address string
+	}
+	Kafka struct {
+		Broker []string
+	}
+}
+
 type Server struct {
-	Verbose    bool
-	BrokerList []string
+	Verbose bool
+	Cfg     Config
 }
 
 func (s *Server) Close() error {
@@ -176,7 +187,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	config := newKafkaConfig()
-	client, err := sarama.NewClient(s.BrokerList, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
@@ -244,7 +255,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	config := newKafkaConfig()
 
-	client, err := sarama.NewClient(s.BrokerList, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
@@ -317,7 +328,7 @@ func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := []ResponseTopicListInfo{}
 
-	client, err := sarama.NewClient(s.BrokerList, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
@@ -355,7 +366,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	config := newKafkaConfig()
-	client, err := sarama.NewClient(s.BrokerList, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
 		return
@@ -393,7 +404,7 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 	res := []ResponsePartitionInfo{}
 
 	config := newKafkaConfig()
-	client, err := sarama.NewClient(s.BrokerList, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
 		return
@@ -438,7 +449,7 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, res)
 }
 
-func (s *Server) Run(addr string) error {
+func (s *Server) Run() error {
 	r := mux.NewRouter()
 	r.NotFoundHandler = http.HandlerFunc(s.NotFoundHandler)
 
@@ -463,7 +474,7 @@ func (s *Server) Run(addr string) error {
 	r.Handle("/debug/vars", http.DefaultServeMux)
 
 	httpServer := &http.Server{
-		Addr:    addr,
+		Addr:    s.Cfg.Global.Address,
 		Handler: handlers.LoggingHandler(os.Stdout, r),
 	}
 
@@ -518,18 +529,8 @@ func main() {
 
 	flag.Parse()
 
-	if *verbose {
-		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
-	}
-
-	if *brokers == "" {
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
 	server := &Server{
-		Verbose:    *verbose,
-		BrokerList: strings.Split(*brokers, ","),
+		Verbose: *verbose,
 	}
 	defer func() {
 		if err := server.Close(); err != nil {
@@ -537,5 +538,34 @@ func main() {
 		}
 	}()
 
-	log.Fatal(server.Run(*addr))
+	if *verbose {
+		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
+	}
+
+	if *config != "" {
+		err := gcfg.ReadFileInto(&server.Cfg, *config)
+		if err != nil {
+			log.Fatal("Unable to read config file: ", err.Error())
+		}
+	}
+
+	if *brokers != "" {
+		server.Cfg.Kafka.Broker = strings.Split(*brokers, ",")
+	}
+
+	if *addr != "" {
+		server.Cfg.Global.Address = *addr
+	}
+
+	if server.Cfg.Global.Address == "" {
+		log.Println("Address required")
+		os.Exit(1)
+	}
+
+	if len(server.Cfg.Kafka.Broker) == 0 {
+		log.Println("Kafka brokers required")
+		os.Exit(1)
+	}
+
+	log.Fatal(server.Run())
 }
