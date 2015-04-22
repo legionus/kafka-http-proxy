@@ -89,7 +89,7 @@ func (s *Server) checkMessage(msg []byte) error {
 func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JsonResponse) {
 	w.Header().Set("Content-Type", "application/json")
 
-	b, err := json.Marshal(v)
+	b, err := json.MarshalIndent(v, "", "    ")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "Unable to marshal result: %v", err)
