@@ -281,7 +281,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	lastOffset--
 
-	if o.Query.Offset >= lastOffset {
+	if o.Query.Offset > lastOffset {
 		if o.Query.Offset == 0 {
 			// Topic is empty
 			s.successResponse(w, o)
