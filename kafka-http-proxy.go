@@ -46,8 +46,8 @@ type KafkaParameters struct {
 }
 
 type ResponseMessages struct {
-	Query    KafkaParameters `json:"query"`
-	Messages []interface{}   `json:"messages"`
+	Query    KafkaParameters   `json:"query"`
+	Messages []json.RawMessage `json:"messages"`
 }
 
 type ResponsePartitionInfo struct {
@@ -248,7 +248,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 			Partition: toInt32(vars["partition"]),
 			Offset:    toInt64(varsOffset),
 		},
-		Messages: []interface{}{},
+		Messages: []json.RawMessage{},
 	}
 
 	length := toInt64(varsLength)
@@ -306,7 +306,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	defer pc.Close()
 
 	for msg := range pc.Messages() {
-		var m interface{}
+		var m json.RawMessage
 
 		if err := json.Unmarshal(msg.Value, &m); err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Bad JSON: %v", err)
