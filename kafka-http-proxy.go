@@ -74,7 +74,8 @@ type Config struct {
 }
 
 type Server struct {
-	Cfg Config
+	Cfg      Config
+	KafkaCfg *sarama.Config
 }
 
 func (s *Server) Close() error {
@@ -190,8 +191,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	config := newKafkaConfig()
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
@@ -257,9 +257,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	length := toInt64(varsLength)
 
-	config := newKafkaConfig()
-
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
@@ -328,11 +326,9 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
-	config := newKafkaConfig()
-
 	res := []ResponseTopicListInfo{}
 
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
 		return
@@ -369,8 +365,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 		Partition: toInt32(vars["partition"]),
 	}
 
-	config := newKafkaConfig()
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
 		return
@@ -407,8 +402,7 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := []ResponsePartitionInfo{}
 
-	config := newKafkaConfig()
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, config)
+	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
 		return
@@ -542,6 +536,7 @@ func main() {
 			log.Println("Failed to close server", err)
 		}
 	}()
+	server.KafkaCfg = newKafkaConfig()
 	server.Cfg.Global.Verbose = false
 
 	if *config != "" {
