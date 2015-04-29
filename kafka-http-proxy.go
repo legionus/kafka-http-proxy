@@ -162,6 +162,10 @@ func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
 	t.Execute(w, nil)
 }
 
+func (s *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
 func (s *Server) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 	s.errorResponse(w, http.StatusNotFound, "404 page not found")
 }
@@ -469,6 +473,9 @@ func (s *Server) Run() error {
 		Methods("GET")
 
 	r.HandleFunc("/", s.RootHandler).
+		Methods("GET")
+
+	r.HandleFunc("/ping", s.PingHandler).
 		Methods("GET")
 
 	r.Handle("/debug/vars", http.DefaultServeMux)
