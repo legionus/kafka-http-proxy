@@ -66,6 +66,7 @@ type ResponseTopicListInfo struct {
 type Config struct {
 	Global struct {
 		Address string
+		Verbose bool
 	}
 	Kafka struct {
 		Broker []string
@@ -73,8 +74,7 @@ type Config struct {
 }
 
 type Server struct {
-	Verbose bool
-	Cfg     Config
+	Cfg Config
 }
 
 func (s *Server) Close() error {
@@ -112,7 +112,7 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 		Status: "error",
 		Data:   fmt.Sprintf(format, args...),
 	}
-	if s.Verbose {
+	if s.Cfg.Global.Verbose {
 		log.Printf("Error [%d]: %s\n", status, resp.Data)
 	}
 	s.writeResponse(w, status, resp)
@@ -485,7 +485,7 @@ func (s *Server) Run() error {
 		Handler: handlers.LoggingHandler(os.Stdout, r),
 	}
 
-	if s.Verbose {
+	if s.Cfg.Global.Verbose {
 		log.Println("Server ready")
 	}
 	return httpServer.ListenAndServe()
@@ -536,24 +536,24 @@ func main() {
 
 	flag.Parse()
 
-	server := &Server{
-		Verbose: *verbose,
-	}
+	server := &Server{}
 	defer func() {
 		if err := server.Close(); err != nil {
 			log.Println("Failed to close server", err)
 		}
 	}()
-
-	if *verbose {
-		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
-	}
+	server.Cfg.Global.Verbose = false
 
 	if *config != "" {
 		err := gcfg.ReadFileInto(&server.Cfg, *config)
 		if err != nil {
 			log.Fatal("Unable to read config file: ", err.Error())
 		}
+	}
+
+	if *verbose {
+		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
+		server.Cfg.Global.Verbose = true
 	}
 
 	if *brokers != "" {
