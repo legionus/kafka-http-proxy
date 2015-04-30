@@ -485,7 +485,7 @@ func (s *Server) InitStatistics() {
 	s.Stats.HttpStatus[404] = hmetrics2.NewCounter()
 	s.Stats.HttpStatus[416] = hmetrics2.NewCounter()
 	s.Stats.HttpStatus[500] = hmetrics2.NewCounter()
-	s.Stats.HttpStatus[512] = hmetrics2.NewCounter()
+	s.Stats.HttpStatus[502] = hmetrics2.NewCounter()
 
 	for code, _ := range s.Stats.HttpStatus {
 		hmetrics2.MustRegisterPackageMetric(fmt.Sprintf("Http.Status.%d", code), s.Stats.HttpStatus[code])
