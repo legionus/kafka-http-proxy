@@ -12,9 +12,11 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/orofarne/hmetrics2"
+	"github.com/orofarne/hmetrics2/expvarexport"
 
 	"encoding/json"
-	_ "expvar"
+	"expvar"
 	"flag"
 	"fmt"
 	"html/template"
@@ -22,6 +24,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +79,11 @@ type Config struct {
 type Server struct {
 	Cfg      Config
 	KafkaCfg *sarama.Config
+	Stats    struct {
+		ResponsePostTime *hmetrics2.Histogram
+		ResponseGetTime  *hmetrics2.Histogram
+		HttpStatus       map[int]*hmetrics2.Counter
+	}
 }
 
 func (s *Server) Close() error {
@@ -106,6 +114,7 @@ func (s *Server) successResponse(w http.ResponseWriter, m interface{}) {
 		Data:   m,
 	}
 	s.writeResponse(w, http.StatusOK, resp)
+	s.Stats.HttpStatus[http.StatusOK].Inc()
 }
 
 func (s *Server) errorResponse(w http.ResponseWriter, status int, format string, args ...interface{}) {
@@ -117,6 +126,7 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 		log.Printf("Error [%d]: %s\n", status, resp.Data)
 	}
 	s.writeResponse(w, status, resp)
+	s.Stats.HttpStatus[status].Inc()
 }
 
 func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +184,12 @@ func (s *Server) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
+	start_time := time.Now().UnixNano()
+	defer func() {
+		end_time := time.Now().UnixNano()
+		s.Stats.ResponsePostTime.AddPoint(float64(end_time - start_time))
+	}()
+
 	kafka := &KafkaParameters{
 		Topic:     vars["topic"],
 		Partition: toInt32(vars["partition"]),
@@ -193,7 +209,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
+		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
@@ -233,6 +249,12 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
+	start_time := time.Now().UnixNano()
+	defer func() {
+		end_time := time.Now().UnixNano()
+		s.Stats.ResponseGetTime.AddPoint(float64(end_time - start_time))
+	}()
+
 	var (
 		varsLength string
 		varsOffset string
@@ -259,7 +281,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
+		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
@@ -289,7 +311,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 			s.successResponse(w, o)
 			return
 		}
-		s.errorResponse(w, http.StatusBadRequest, "Offset out of range: %v", lastOffset)
+		s.errorResponse(w, http.StatusRequestedRangeNotSatisfiable, "Offset out of range: %v", lastOffset)
 		return
 	}
 
@@ -330,7 +352,7 @@ func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to make client: %v", err)
+		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
@@ -367,7 +389,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 
 	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
+		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
@@ -404,7 +426,7 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to make client: %v", err)
+		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
 		return
 	}
 	defer client.Close()
@@ -445,6 +467,47 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.successResponse(w, res)
+}
+
+func (s *Server) InitStatistics() {
+	hmetrics2.SetPeriod(10 * time.Second)
+	hmetrics2.AddHook(expvarexport.Exporter("Kafka"))
+
+	s.Stats.ResponsePostTime = hmetrics2.NewHistogram()
+	s.Stats.ResponseGetTime = hmetrics2.NewHistogram()
+
+	hmetrics2.MustRegisterPackageMetric("Response.POST.Time", s.Stats.ResponsePostTime)
+	hmetrics2.MustRegisterPackageMetric("Response.GET.Time", s.Stats.ResponseGetTime)
+
+	s.Stats.HttpStatus = make(map[int]*hmetrics2.Counter)
+	s.Stats.HttpStatus[200] = hmetrics2.NewCounter()
+	s.Stats.HttpStatus[400] = hmetrics2.NewCounter()
+	s.Stats.HttpStatus[404] = hmetrics2.NewCounter()
+	s.Stats.HttpStatus[416] = hmetrics2.NewCounter()
+	s.Stats.HttpStatus[500] = hmetrics2.NewCounter()
+	s.Stats.HttpStatus[512] = hmetrics2.NewCounter()
+
+	for code, _ := range s.Stats.HttpStatus {
+		hmetrics2.MustRegisterPackageMetric(fmt.Sprintf("Http.Status.%d", code), s.Stats.HttpStatus[code])
+	}
+
+	type RuntimeStat struct {
+		Goroutines int
+		CgoCall    int64
+		Cpu        int
+		GoMaxProcs int
+	}
+
+	expvar.Publish("runtime", expvar.Func(func() interface{} {
+		data := &RuntimeStat{
+			Goroutines: runtime.NumGoroutine(),
+			CgoCall:    runtime.NumCgoCall(),
+			Cpu:        runtime.NumCPU(),
+			GoMaxProcs: runtime.GOMAXPROCS(0),
+		}
+
+		return data
+	}))
 }
 
 func (s *Server) Run() error {
@@ -568,6 +631,8 @@ func main() {
 		log.Println("Kafka brokers required")
 		os.Exit(1)
 	}
+
+	server.InitStatistics()
 
 	log.Fatal(server.Run())
 }
