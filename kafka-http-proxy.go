@@ -91,11 +91,6 @@ func (s *Server) Close() error {
 	return nil
 }
 
-func (s *Server) checkMessage(msg []byte) error {
-	var m interface{}
-	return json.Unmarshal(msg, &m)
-}
-
 func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JsonResponse) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -203,7 +198,8 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = s.checkMessage(msg); err != nil {
+	var m json.RawMessage
+	if err = json.Unmarshal(msg, &m); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Message must be JSON")
 		return
 	}
