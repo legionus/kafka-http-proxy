@@ -79,6 +79,7 @@ type Config struct {
 type Server struct {
 	Cfg      Config
 	KafkaCfg *sarama.Config
+	Client   sarama.Client
 	Stats    struct {
 		ResponsePostTime *hmetrics2.Histogram
 		ResponseGetTime  *hmetrics2.Histogram
@@ -207,14 +208,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
-	if err != nil {
-		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
-		return
-	}
-	defer client.Close()
-
-	parts, err := client.Partitions(kafka.Topic)
+	parts, err := s.Client.Partitions(kafka.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 		return
@@ -225,7 +219,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	producer, err := sarama.NewSyncProducerFromClient(client)
+	producer, err := sarama.NewSyncProducerFromClient(s.Client)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make producer: %v", err)
 		return
@@ -279,14 +273,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	length := toInt64(varsLength)
 
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
-	if err != nil {
-		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
-		return
-	}
-	defer client.Close()
-
-	parts, err := client.Partitions(o.Query.Topic)
+	parts, err := s.Client.Partitions(o.Query.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 		return
@@ -297,7 +284,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lastOffset, err := client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
+	lastOffset, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
@@ -315,7 +302,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	consumer, err := sarama.NewConsumerFromClient(client)
+	consumer, err := sarama.NewConsumerFromClient(s.Client)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
 		return
@@ -350,21 +337,14 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 	res := []ResponseTopicListInfo{}
 
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
-	if err != nil {
-		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
-		return
-	}
-	defer client.Close()
-
-	topics, err := client.Topics()
+	topics, err := s.Client.Topics()
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to get topics: %v", err)
 		return
 	}
 
 	for _, topic := range topics {
-		parts, err := client.Partitions(topic)
+		parts, err := s.Client.Partitions(topic)
 		if err != nil {
 			s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 			return
@@ -387,14 +367,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 		Partition: toInt32(vars["partition"]),
 	}
 
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
-	if err != nil {
-		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
-		return
-	}
-	defer client.Close()
-
-	broker, err := client.Leader(res.Topic, res.Partition)
+	broker, err := s.Client.Leader(res.Topic, res.Partition)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
 		return
@@ -402,13 +375,13 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 
 	res.Leader = broker.Addr()
 
-	res.Offset, err = client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
+	res.Offset, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
 	}
 
-	wp, err := client.WritablePartitions(res.Topic)
+	wp, err := s.Client.WritablePartitions(res.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
 		return
@@ -424,20 +397,13 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := []ResponsePartitionInfo{}
 
-	client, err := sarama.NewClient(s.Cfg.Kafka.Broker, s.KafkaCfg)
-	if err != nil {
-		s.errorResponse(w, http.StatusBadGateway, "Unable to make client: %v", err)
-		return
-	}
-	defer client.Close()
-
-	writable, err := client.WritablePartitions(vars["topic"])
+	writable, err := s.Client.WritablePartitions(vars["topic"])
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
 		return
 	}
 
-	parts, err := client.Partitions(vars["topic"])
+	parts, err := s.Client.Partitions(vars["topic"])
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
 		return
@@ -450,14 +416,14 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 			Writable:  inSlice(int32(partition), writable),
 		}
 
-		broker, err := client.Leader(r.Topic, r.Partition)
+		broker, err := s.Client.Leader(r.Topic, r.Partition)
 		if err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
 			return
 		}
 		r.Leader = broker.Addr()
 
-		r.Offset, err = client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
+		r.Offset, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
 		if err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 			return
@@ -631,6 +597,14 @@ func main() {
 		log.Println("Kafka brokers required")
 		os.Exit(1)
 	}
+
+	var err error
+	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.KafkaCfg)
+	if err != nil {
+		log.Fatal("Unable to make client: ", err.Error())
+		return
+	}
+	defer server.Client.Close()
 
 	server.InitStatistics()
 
