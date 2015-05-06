@@ -54,11 +54,12 @@ type ResponseMessages struct {
 }
 
 type ResponsePartitionInfo struct {
-	Topic     string `json:"topic"`
-	Partition int32  `json:"partition"`
-	Leader    string `json:"leader"`
-	Offset    int64  `json:"offset"`
-	Writable  bool   `json:"writable"`
+	Topic        string `json:"topic"`
+	Partition    int32  `json:"partition"`
+	Leader       string `json:"leader"`
+	OffsetOldest int64  `json:"offsetfrom"`
+	OffsetNewest int64  `json:"offsetto"`
+	Writable     bool   `json:"writable"`
 }
 
 type ResponseTopicListInfo struct {
@@ -254,9 +255,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		varsLength = "1"
 	}
 
-	if varsOffset = r.FormValue("offset"); varsOffset == "" {
-		varsOffset = "0"
-	}
+	varsOffset = r.FormValue("offset")
 
 	o := &ResponseMessages{
 		Query: KafkaParameters{
@@ -280,21 +279,33 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lastOffset, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
+	offsetFrom, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetOldest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
 	}
 
-	lastOffset--
+	if varsOffset == "" {
+		// Set default value
+		o.Query.Offset = offsetFrom
+	}
 
-	if o.Query.Offset > lastOffset {
+	offsetTo, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
+		return
+	}
+
+	offsetTo--
+
+	if o.Query.Offset < offsetFrom || o.Query.Offset > offsetTo {
 		if o.Query.Offset == 0 {
 			// Topic is empty
 			s.successResponse(w, o)
 			return
 		}
-		s.errorResponse(w, http.StatusRequestedRangeNotSatisfiable, "Offset out of range: %v", lastOffset)
+		s.errorResponse(w, http.StatusRequestedRangeNotSatisfiable,
+			"Offset out of range (%v, %v)", offsetFrom, offsetTo)
 		return
 	}
 
@@ -322,7 +333,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		o.Messages = append(o.Messages, m)
 		length--
 
-		if msg.Offset >= lastOffset || length == 0 {
+		if msg.Offset >= offsetTo || length == 0 {
 			break
 		}
 	}
@@ -371,9 +382,15 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 
 	res.Leader = broker.Addr()
 
-	res.Offset, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
+	res.OffsetNewest, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
+		return
+	}
+
+	res.OffsetOldest, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetOldest)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get oldest offset: %v", err)
 		return
 	}
 
@@ -419,9 +436,15 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		r.Leader = broker.Addr()
 
-		r.Offset, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
+		r.OffsetNewest, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
+			return
+		}
+
+		r.OffsetOldest, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetOldest)
+		if err != nil {
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get oldest offset: %v", err)
 			return
 		}
 
@@ -535,6 +558,9 @@ func inSlice(n int32, list []int32) bool {
 }
 
 func toInt32(s string) int32 {
+	if s == "" {
+		return 0
+	}
 	i, err := strconv.ParseInt(s, 10, 32)
 	if err != nil {
 		return 0
@@ -543,6 +569,9 @@ func toInt32(s string) int32 {
 }
 
 func toInt64(s string) int64 {
+	if s == "" {
+		return 0
+	}
 	i, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0
