@@ -1,5 +1,7 @@
 #!/usr/bin/make -f
 
+.EXPORT_ALL_VARIABLES:
+
 PROJECT = kafka-http-proxy
 PROJECT_URL = github.com/legionus/$(PROJECT)
 PROJECT_DIR = $(dir $(PROJECT_URL))
@@ -15,7 +17,7 @@ GOPATH = $(CURDIR)/Godeps/_workspace
 
 override_dh_auto_configure:
 	mkdir -p -- $(GOPATH)/src/$(PROJECT_DIR)
-	cd $(GOPATH)/src/$(PROJECT_DIR); ln -sf $(CURDIR)
+	cd $(GOPATH)/src/$(PROJECT_DIR); ln -sf $(CURDIR) $(PROJECT)
 
 override_dh_auto_build:
 	cd $(GOPATH)/src/$(PROJECT_URL); go get ./...
