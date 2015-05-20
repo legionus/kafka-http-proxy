@@ -54,12 +54,14 @@ type ResponseMessages struct {
 }
 
 type ResponsePartitionInfo struct {
-	Topic        string `json:"topic"`
-	Partition    int32  `json:"partition"`
-	Leader       string `json:"leader"`
-	OffsetOldest int64  `json:"offsetfrom"`
-	OffsetNewest int64  `json:"offsetto"`
-	Writable     bool   `json:"writable"`
+	Topic        string  `json:"topic"`
+	Partition    int32   `json:"partition"`
+	Leader       string  `json:"leader"`
+	OffsetOldest int64   `json:"offsetfrom"`
+	OffsetNewest int64   `json:"offsetto"`
+	Writable     bool    `json:"writable"`
+	ReplicasNum  int     `json:"replicasnum"`
+	Replicas     []int32 `json:"replicas"`
 }
 
 type ResponseTopicListInfo struct {
@@ -385,6 +387,13 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 
 	res.Leader = broker.Addr()
 
+	res.Replicas, err = s.Client.Replicas(res.Topic, res.Partition)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
+		return
+	}
+	res.ReplicasNum = len(res.Replicas)
+
 	res.OffsetNewest, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
@@ -438,6 +447,13 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r.Leader = broker.Addr()
+
+		r.Replicas, err = s.Client.Replicas(r.Topic, r.Partition)
+		if err != nil {
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
+			return
+		}
+		r.ReplicasNum = len(r.Replicas)
 
 		r.OffsetNewest, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
 		if err != nil {
