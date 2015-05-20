@@ -1,5 +1,7 @@
 description "Kafka HTTP proxy"
 
+respawn
+
 start on runlevel [2345]
 stop on runlevel [!2345]
 
