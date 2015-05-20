@@ -261,7 +261,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		Query: KafkaParameters{
 			Topic:     vars["topic"],
 			Partition: toInt32(vars["partition"]),
-			Offset:    toInt64(varsOffset),
+			Offset:    -1,
 		},
 		Messages: []json.RawMessage{},
 	}
@@ -288,6 +288,8 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	if varsOffset == "" {
 		// Set default value
 		o.Query.Offset = offsetFrom
+	} else {
+		o.Query.Offset = toInt64(varsOffset)
 	}
 
 	offsetTo, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
@@ -298,12 +300,13 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	offsetTo--
 
+	if o.Query.Offset == 0 && offsetTo == 0 {
+		// Topic is empty
+		s.successResponse(w, o)
+		return
+	}
+
 	if o.Query.Offset < offsetFrom || o.Query.Offset > offsetTo {
-		if o.Query.Offset == 0 {
-			// Topic is empty
-			s.successResponse(w, o)
-			return
-		}
 		s.errorResponse(w, http.StatusRequestedRangeNotSatisfiable,
 			"Offset out of range (%v, %v)", offsetFrom, offsetTo)
 		return
