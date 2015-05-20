@@ -69,6 +69,15 @@ type ResponseTopicListInfo struct {
 	Partitions int    `json:"partitions"`
 }
 
+type CfgDuration struct {
+	time.Duration
+}
+
+func (d *CfgDuration) UnmarshalText(data []byte) (err error) {
+	d.Duration, err = time.ParseDuration(string(data))
+	return
+}
+
 type Config struct {
 	Global struct {
 		Address string
@@ -77,13 +86,93 @@ type Config struct {
 	Kafka struct {
 		Broker []string
 	}
+	Net struct {
+		MaxOpenRequests int
+		DialTimeout     CfgDuration
+		ReadTimeout     CfgDuration
+		WriteTimeout    CfgDuration
+	}
+	Metadata struct {
+		RetryMax         int
+		RetryBackoff     CfgDuration
+		RefreshFrequency CfgDuration
+	}
+	Producer struct {
+		FlushBytes       int
+		FlushMessages    int
+		FlushMaxMessages int
+		FlushFrequency   CfgDuration
+	}
+	Consumer struct {
+		RetryBackoff CfgDuration
+		MaxWaitTime  CfgDuration
+		FetchMin     int32
+		FetchMax     int32
+		FetchDefault int32
+	}
+}
+
+func (c *Config) SetDefaults() {
+	c.Global.Verbose = false
+
+	c.Net.MaxOpenRequests = 5
+	c.Net.DialTimeout.Duration = 30 * time.Second
+	c.Net.ReadTimeout.Duration = 30 * time.Second
+	c.Net.WriteTimeout.Duration = 30 * time.Second
+
+	c.Metadata.RetryMax = 3
+	c.Metadata.RetryBackoff.Duration = 250 * time.Millisecond
+	c.Metadata.RefreshFrequency.Duration = 2 * time.Minute
+
+	c.Producer.FlushBytes = int(sarama.MaxRequestSize)
+	c.Producer.FlushFrequency.Duration = 100 * time.Millisecond
+	c.Producer.FlushMessages = 1
+	c.Producer.FlushMaxMessages = 1
+
+	c.Consumer.RetryBackoff.Duration = 2 * time.Second
+	c.Consumer.MaxWaitTime.Duration = 250 * time.Millisecond
+	c.Consumer.FetchMin = 1
+	c.Consumer.FetchMax = sarama.MaxResponseSize
+	c.Consumer.FetchDefault = 32768
+}
+
+func (c *Config) KafkaConfig() *sarama.Config {
+	k := sarama.NewConfig()
+
+	k.Net.MaxOpenRequests = c.Net.MaxOpenRequests
+	k.Net.DialTimeout = c.Net.DialTimeout.Duration
+	k.Net.ReadTimeout = c.Net.ReadTimeout.Duration
+	k.Net.WriteTimeout = c.Net.WriteTimeout.Duration
+
+	k.Metadata.Retry.Max = c.Metadata.RetryMax
+	k.Metadata.Retry.Backoff = c.Metadata.RetryBackoff.Duration
+	k.Metadata.RefreshFrequency = c.Metadata.RefreshFrequency.Duration
+
+	// Producer settings
+	k.Producer.Partitioner = sarama.NewManualPartitioner
+	k.Producer.RequiredAcks = sarama.WaitForAll
+	k.Producer.Retry.Max = 10
+
+	k.Producer.Flush.Bytes = c.Producer.FlushBytes
+	k.Producer.Flush.Frequency = c.Producer.FlushFrequency.Duration
+	k.Producer.Flush.Messages = c.Producer.FlushMessages
+	k.Producer.Flush.MaxMessages = c.Producer.FlushMaxMessages
+
+	// Consumer settings
+	k.Consumer.Return.Errors = true
+	k.Consumer.Retry.Backoff = c.Consumer.RetryBackoff.Duration
+	k.Consumer.MaxWaitTime = c.Consumer.MaxWaitTime.Duration
+	k.Consumer.Fetch.Min = c.Consumer.FetchMin
+	k.Consumer.Fetch.Max = c.Consumer.FetchMax
+	k.Consumer.Fetch.Default = c.Consumer.FetchDefault
+
+	return k
 }
 
 type Server struct {
-	Cfg      Config
-	KafkaCfg *sarama.Config
-	Client   sarama.Client
-	Stats    struct {
+	Cfg    Config
+	Client sarama.Client
+	Stats  struct {
 		ResponsePostTime *hmetrics2.Histogram
 		ResponseGetTime  *hmetrics2.Histogram
 		HttpStatus       map[int]*hmetrics2.Counter
@@ -552,21 +641,6 @@ func (s *Server) Run() error {
 	return httpServer.ListenAndServe()
 }
 
-func newKafkaConfig() *sarama.Config {
-	c := sarama.NewConfig()
-
-	// Producer settings
-	c.Producer.Partitioner = sarama.NewManualPartitioner
-	c.Producer.RequiredAcks = sarama.WaitForAll
-	c.Producer.Retry.Max = 10
-
-	// Consumer settings
-	c.Consumer.Return.Errors = true
-	c.Consumer.MaxWaitTime = 250 * time.Millisecond
-
-	return c
-}
-
 func inSlice(n int32, list []int32) bool {
 	for i := range list {
 		if n == int32(i) {
@@ -609,8 +683,7 @@ func main() {
 			log.Println("Failed to close server", err)
 		}
 	}()
-	server.KafkaCfg = newKafkaConfig()
-	server.Cfg.Global.Verbose = false
+	server.Cfg.SetDefaults()
 
 	if *config != "" {
 		err := gcfg.ReadFileInto(&server.Cfg, *config)
@@ -643,7 +716,7 @@ func main() {
 	}
 
 	var err error
-	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.KafkaCfg)
+	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.Cfg.KafkaConfig())
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
 		return
