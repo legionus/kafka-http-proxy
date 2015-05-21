@@ -5,4 +5,14 @@ respawn
 start on runlevel [2345]
 stop on runlevel [!2345]
 
-exec /usr/sbin/kafka-http-proxy -config=/etc/khp.cfg 2>&1 >/var/log/kafka-http-proxy.log
+script
+    BIN_DIR=/usr/sbin
+    SYSCONF_DIR=/etc
+    LOG_DIR=/var/log
+
+    [ ! -s /etc/default/khp ] || . /etc/default/khp
+
+    exec "$BIN_DIR/kafka-http-proxy" \
+        -config="$CONFIG_DIR/khp.cfg" \
+        >"$LOG_DIR"/kafka-http-proxy.log 2>&1
+end script

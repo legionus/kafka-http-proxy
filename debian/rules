@@ -6,6 +6,9 @@ PROJECT = kafka-http-proxy
 PROJECT_URL = github.com/legionus/$(PROJECT)
 PROJECT_DIR = $(dir $(PROJECT_URL))
 
+SYSCONF_DIR = /etc
+CONFIG_SUFFIX =
+
 DEBIAN_DIR = $(CURDIR)/debian
 GOPATH = $(CURDIR)/Godeps/_workspace
 
@@ -27,4 +30,5 @@ override_dh_install:
 	install -m 755 $(GOPATH)/bin/* $(DEBIAN_DIR)/$(PROJECT)/usr/sbin
 	install -d $(DEBIAN_DIR)/$(PROJECT)/etc/init
 	install -m 644 $(DEBIAN_DIR)/kafka-http-proxy.conf.init $(DEBIAN_DIR)/$(PROJECT)/etc/init/kafka-http-proxy.conf
-	install -m 644 $(DEBIAN_DIR)/../server.cfg $(DEBIAN_DIR)/$(PROJECT)/etc/khp.cfg.example
+	install -d $(DEBIAN_DIR)/$(PROJECT)/$(SYSCONF_DIR)
+	install -m 644 $(DEBIAN_DIR)/../server.cfg $(DEBIAN_DIR)/$(PROJECT)/$(SYSCONF_DIR)/khp.cfg$(CONFIG_SUFFIX)
