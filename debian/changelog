@@ -1,3 +1,9 @@
+kafka-http-proxy (0.2.1) unstable; urgency=low
+
+  * Fix typo in upstart script.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Thu, 21 May 2015 18:12:02 +0300
+
 kafka-http-proxy (0.2.0) unstable; urgency=low
 
   * Show information about replicas for partition.
