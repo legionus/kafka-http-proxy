@@ -1,3 +1,12 @@
+kafka-http-proxy (0.2.0) unstable; urgency=low
+
+  * Show information about replicas for partition.
+  * Make scripts more customizable.
+  * Add more config params.
+  * Add respawn to upstart config.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 20 May 2015 20:40:25 +0300
+
 kafka-http-proxy (0.1.0) unstable; urgency=low
 
   * Initial Release.
