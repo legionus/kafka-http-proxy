@@ -25,6 +25,7 @@ func (d *CfgDuration) UnmarshalText(data []byte) (err error) {
 type Config struct {
 	Global struct {
 		Address string
+		Logfile string
 		Verbose bool
 	}
 	Kafka struct {
@@ -58,6 +59,7 @@ type Config struct {
 
 func (c *Config) SetDefaults() {
 	c.Global.Verbose = false
+	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
 
 	c.Net.MaxOpenRequests = 5
 	c.Net.DialTimeout.Duration = 30 * time.Second

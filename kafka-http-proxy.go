@@ -24,9 +24,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -70,9 +72,10 @@ type ResponseTopicListInfo struct {
 }
 
 type Server struct {
-	Cfg    Config
-	Client sarama.Client
-	Stats  struct {
+	Cfg     Config
+	Logfile *Logfile
+	Client  sarama.Client
+	Stats   struct {
 		ResponsePostTime *hmetrics2.Histogram
 		ResponseGetTime  *hmetrics2.Histogram
 		HttpStatus       map[int]*hmetrics2.Counter
@@ -532,7 +535,7 @@ func (s *Server) Run() error {
 
 	httpServer := &http.Server{
 		Addr:    s.Cfg.Global.Address,
-		Handler: handlers.LoggingHandler(os.Stdout, r),
+		Handler: handlers.LoggingHandler(s.Logfile, r),
 	}
 
 	if s.Cfg.Global.Verbose {
@@ -605,6 +608,17 @@ func main() {
 		server.Cfg.Global.Address = *addr
 	}
 
+	var err error
+
+	server.Logfile, err = OpenLogfile(server.Cfg.Global.Logfile)
+	if err != nil {
+		log.Fatal("Unable to open log: ", err.Error())
+		return
+	}
+	defer server.Logfile.Close()
+
+	log.SetOutput(server.Logfile)
+
 	if server.Cfg.Global.Address == "" {
 		log.Println("Address required")
 		os.Exit(1)
@@ -615,13 +629,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	var err error
 	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.Cfg.KafkaConfig())
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
 		return
 	}
 	defer server.Client.Close()
+
+	sig_chan := make(chan os.Signal, 1)
+	signal.Notify(sig_chan, syscall.SIGHUP)
+	go func() {
+		_ = <-sig_chan
+		if err := server.Logfile.Reopen(); err != nil {
+			panic("Unable to reopen logfile")
+		}
+	}()
 
 	server.InitStatistics()
 
