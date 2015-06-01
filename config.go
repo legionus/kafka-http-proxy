@@ -24,9 +24,10 @@ func (d *CfgDuration) UnmarshalText(data []byte) (err error) {
 
 type Config struct {
 	Global struct {
-		Address string
-		Logfile string
-		Verbose bool
+		Address    string
+		Logfile    string
+		Verbose    bool
+		GoMaxProcs int
 	}
 	Kafka struct {
 		Broker []string
@@ -59,6 +60,7 @@ type Config struct {
 
 func (c *Config) SetDefaults() {
 	c.Global.Verbose = false
+	c.Global.GoMaxProcs = 0
 	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
 
 	c.Net.MaxOpenRequests = 5

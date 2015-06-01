@@ -629,6 +629,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if server.Cfg.Global.GoMaxProcs == 0 {
+		server.Cfg.Global.GoMaxProcs = runtime.NumCPU()
+	}
+	runtime.GOMAXPROCS(server.Cfg.Global.GoMaxProcs)
+
 	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.Cfg.KafkaConfig())
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
