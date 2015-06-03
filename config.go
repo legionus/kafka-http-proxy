@@ -26,6 +26,7 @@ type Config struct {
 	Global struct {
 		Address    string
 		Logfile    string
+		Pidfile    string
 		Verbose    bool
 		GoMaxProcs int
 	}
@@ -62,6 +63,7 @@ func (c *Config) SetDefaults() {
 	c.Global.Verbose = false
 	c.Global.GoMaxProcs = 0
 	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
+	c.Global.Pidfile = "/run/kafka-http-proxy.pid"
 
 	c.Net.MaxOpenRequests = 5
 	c.Net.DialTimeout.Duration = 30 * time.Second

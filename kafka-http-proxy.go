@@ -74,6 +74,7 @@ type ResponseTopicListInfo struct {
 type Server struct {
 	Cfg     Config
 	Logfile *Logfile
+	Pidfile *Pidfile
 	Client  sarama.Client
 	Stats   struct {
 		ResponsePostTime *hmetrics2.Histogram
@@ -610,6 +611,23 @@ func main() {
 
 	var err error
 
+	server.Pidfile, err = OpenPidfile(server.Cfg.Global.Pidfile)
+	if err != nil {
+		log.Fatal("Unable to open pidfile: ", err.Error())
+		return
+	}
+	defer server.Pidfile.Close()
+
+	if err = server.Pidfile.Check(); err != nil {
+		log.Fatal("Check failed: ", err.Error())
+		os.Exit(1)
+	}
+
+	if err = server.Pidfile.Write(); err != nil {
+		log.Fatal("Unable to write pidfile: ", err.Error())
+		os.Exit(1)
+	}
+
 	server.Logfile, err = OpenLogfile(server.Cfg.Global.Logfile)
 	if err != nil {
 		log.Fatal("Unable to open log: ", err.Error())
@@ -637,7 +655,7 @@ func main() {
 	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.Cfg.KafkaConfig())
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
-		return
+		os.Exit(1)
 	}
 	defer server.Client.Close()
 
