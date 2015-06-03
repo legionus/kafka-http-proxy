@@ -1,3 +1,9 @@
+kafka-http-proxy (0.3.1) unstable; urgency=low
+
+  * Add monitoring scripts.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 03 Jun 2015 18:59:03 +0300
+
 kafka-http-proxy (0.3.0) unstable; urgency=low
 
   * Add logfile and pidfile.
