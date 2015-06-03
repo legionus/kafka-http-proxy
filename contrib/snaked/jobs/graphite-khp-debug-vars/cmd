@@ -1,0 +1,13 @@
+#!/bin/sh -efu
+
+check=/usr/share/kafka-http-proxy/graphite/graphite-khp-debug-vars
+config=/etc/yabs-graphite-client/graphite-client.cfg
+
+port="$(sed -n -e 's/^[[:space:]]*SENDER_PORT[[:space:]]*=[[:space:]]*\([0-9]\+\)$/\1/p' "$config")"
+if [ -z "$port" ]; then
+	echo "ERROR: Unable to get destination port" >&2
+	exit 1
+fi
+
+$check |
+	nc localhost $port
