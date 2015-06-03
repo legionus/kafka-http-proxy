@@ -8,11 +8,8 @@ stop on runlevel [!2345]
 script
     BIN_DIR=/usr/sbin
     SYSCONF_DIR=/etc
-    LOG_DIR=/var/log
 
     [ ! -s /etc/default/khp ] || . /etc/default/khp
 
-    exec "$BIN_DIR/kafka-http-proxy" \
-        -config="$SYSCONF_DIR/khp.cfg" \
-        >"$LOG_DIR"/kafka-http-proxy.log 2>&1
+    exec "$BIN_DIR/kafka-http-proxy" -config="$SYSCONF_DIR/khp.cfg"
 end script
