@@ -1,0 +1,43 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Sys::Hostname;
+use LWP::UserAgent;
+use JSON::XS qw(decode_json);
+
+my $url    = "http://localhost:8080";
+my @topics = qw(events);
+
+my $hostname = hostname;
+$hostname =~ s/\./_/g;
+
+my $metric_time   = int(time());
+my $metric_prefix = "five_sec.$hostname.";
+
+my $ua  = LWP::UserAgent->new;
+my $req = HTTP::Request->new("GET", "$url/debug/vars");
+my $res = $ua->request($req);
+
+if (!$res->is_success) {
+	die $res->status_line;
+}
+
+my $json = decode_json($res->content);
+
+while (my ($k,$v) = each %{$json->{Kafka}}) {
+	$v = 0 if !$v;
+	print "$metric_prefix";
+	print "Kafka.$k $v";
+	print " $metric_time" if $metric_time;
+	print "\n";
+}
+
+while (my ($k,$v) = each %{$json->{runtime}}) {
+	$v = 0 if !$v;
+	print "$metric_prefix";
+	print "runtime.$k $v";
+	print " $metric_time" if $metric_time;
+	print "\n";
+}

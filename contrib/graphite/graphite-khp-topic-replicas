@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Sys::Hostname;
+use LWP::UserAgent;
+use JSON::XS qw(decode_json);
+
+my $url    = "http://localhost:8080";
+my @topics = qw(events);
+
+my $hostname = hostname;
+$hostname =~ s/\./_/g;
+
+my $metric_time   = int(time());
+my $metric_prefix = "one_min.$hostname.";
+
+foreach my $topic (@topics) {
+	my $ua  = LWP::UserAgent->new;
+	my $req = HTTP::Request->new("GET", "$url/v1/info/topics/$topic");
+	my $res = $ua->request($req);
+
+	if (!$res->is_success) {
+		die $res->status_line;
+	}
+
+	my $json = decode_json($res->content);
+	if ($json->{status} ne "success") {
+		die $json->{data};
+	}
+
+	my $sum = 0;
+	my $writable = 0;
+	my $replicas = {};
+
+	foreach my $p (@{$json->{data}}) {
+		$sum += $p->{replicasnum};
+
+		$writable += 1
+			if $p->{writable};
+
+		foreach my $r (@{$p->{replicas}}) {
+			$replicas->{$r} += 1;
+		}
+	}
+
+	print "$metric_prefix";
+	print "topic.$topic.replicas.sum $sum";
+	print " $metric_time" if $metric_time;
+	print "\n";
+
+	print "$metric_prefix";
+	print "topic.$topic.partitions.writable $writable";
+	print " $metric_time" if $metric_time;
+	print "\n";
+
+	while (my ($k,$v) = each %{$replicas}) {
+		print "$metric_prefix";
+		print "topic.$topic.broker.$k.sum $v";
+		print " $metric_time" if $metric_time;
+		print "\n";
+	}
+}
