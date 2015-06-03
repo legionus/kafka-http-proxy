@@ -1,0 +1,11 @@
+/var/log/kafka-http-proxy.log {
+    daily
+    rotate 10
+    notifempty
+    missingok
+    compress
+    delaycompress
+    postrotate
+        /bin/kill -HUP `cat /run/kafka-http-proxy.pid 2>/dev/null` 2> /dev/null || true
+    endscript
+}
