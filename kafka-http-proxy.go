@@ -662,9 +662,11 @@ func main() {
 	sig_chan := make(chan os.Signal, 1)
 	signal.Notify(sig_chan, syscall.SIGHUP)
 	go func() {
-		_ = <-sig_chan
-		if err := server.Logfile.Reopen(); err != nil {
-			panic("Unable to reopen logfile")
+		for {
+			_ = <-sig_chan
+			if err := server.Logfile.Reopen(); err != nil {
+				panic("Unable to reopen logfile")
+			}
 		}
 	}()
 
