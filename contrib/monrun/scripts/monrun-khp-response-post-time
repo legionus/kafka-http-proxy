@@ -1,0 +1,37 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use LWP::UserAgent;
+use JSON::XS qw(decode_json);
+
+my $url    = "http://localhost:8080";
+
+sub ans {
+	my ($code, $msg) = @_;
+	print "PASSIVE-CHECK:response_post_time;$code;$msg\n";
+	exit(0);
+}
+
+my $ua  = LWP::UserAgent->new;
+my $req = HTTP::Request->new("GET", "$url/debug/vars");
+my $res = $ua->request($req);
+
+if (!$res->is_success) {
+	ans(2, $res->status_line);
+}
+
+my $json = eval { decode_json($res->content) };
+ans(2, "Bad json")
+	if $@;
+
+ans(2, "Metric not found")
+	if !$json->{Kafka}->{"main.Response.POST.Time.avg"};
+
+my $resp_post_time_avg = int($json->{Kafka}->{"main.Response.POST.Time.avg"} / 1000000);
+
+ans(2, "POST response to slow, $resp_post_time_avg ms")
+	if $resp_post_time_avg > 1000;
+
+ans(0, "OK");

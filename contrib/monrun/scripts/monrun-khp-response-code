@@ -1,0 +1,35 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use LWP::UserAgent;
+use JSON::XS qw(decode_json);
+
+my $url       = "http://localhost:8080";
+my @bad_codes = qw(500 502);
+
+sub ans {
+	my ($code, $msg) = @_;
+	print "PASSIVE-CHECK:response_error_codes;$code;$msg\n";
+	exit(0);
+}
+
+my $ua  = LWP::UserAgent->new;
+my $req = HTTP::Request->new("GET", "$url/debug/vars");
+my $res = $ua->request($req);
+
+if (!$res->is_success) {
+	ans(2, $res->status_line);
+}
+
+my $json = eval { decode_json($res->content) };
+ans(2, "Bad json")
+	if $@;
+
+foreach my $code (@bad_codes) {
+	ans(2, "Status $code == " . $json->{Kafka}->{"main.Http.Status.$code.count"})
+		if $json->{Kafka}->{"main.Http.Status.$code.count"} > 0;
+}
+
+ans(0, "OK");

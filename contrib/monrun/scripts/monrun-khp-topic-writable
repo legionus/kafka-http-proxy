@@ -1,0 +1,55 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use LWP::UserAgent;
+use JSON::XS qw(decode_json);
+
+my $url    = "http://localhost:8080";
+my $topics = {
+	events     => 256,
+	zabbix_noc => 16,
+	slb_noc    => 16,
+};
+
+sub ans {
+	my ($code, $msg) = @_;
+	print "PASSIVE-CHECK:replicas_writable;$code;$msg\n";
+	exit(0);
+}
+
+foreach my $topic (keys %{$topics}) {
+	my $ua  = LWP::UserAgent->new;
+	my $req = HTTP::Request->new("GET", "$url/v1/info/topics/$topic");
+	my $res = $ua->request($req);
+
+	if (!$res->is_success) {
+		my $json = eval { decode_json($res->content) };
+		ans(2, $res->status_line)
+			if $@;
+
+		if ($json->{status} eq "error") {
+			ans(2, $json->{data});
+		}
+
+		ans(2, $res->status_line);
+	}
+
+	my $json = decode_json($res->content);
+	if ($json->{status} ne "success") {
+		ans(2, $json->{data});
+	}
+
+	my $writable = 0;
+
+	foreach my $p (@{$json->{data}}) {
+		$writable += 1
+			if $p->{writable};
+	}
+
+	ans(0, "OK")
+		if $writable == $topics->{$topic};
+
+	ans(2, "Topic $topic, writable topics $writable != " . $topics->{$topic});
+}
