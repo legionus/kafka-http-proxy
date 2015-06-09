@@ -10,6 +10,8 @@ Homepage: https://github.com/legionus/kafka-http-proxy
 
 Package: kafka-http-proxy
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends},
+  logrotate, snaked, monrun, yabs-graphite-sender,
+  libjson-perl, libjson-xs-perl, libwww-perl
 Description: Kafka HTTP proxy.
   Server makes simple HTTP API for Apache Kafka.

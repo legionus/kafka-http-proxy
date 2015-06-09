@@ -1,3 +1,10 @@
+kafka-http-proxy (0.3.3) unstable; urgency=low
+
+  * debian: Add dependencies.
+  * Add monrun tasks.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 09 Jun 2015 18:57:04 +0300
+
 kafka-http-proxy (0.3.2) unstable; urgency=low
 
   * Fix bug in signal handler.
