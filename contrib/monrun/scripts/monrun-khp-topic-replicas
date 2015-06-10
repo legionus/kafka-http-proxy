@@ -10,7 +10,7 @@ my $url    = "http://localhost:8080";
 
 my $kafka_servers = 3;
 my $topics = {
-	events     => (256 * $kafka_servers),
+	juggler    => (256 * $kafka_servers),
 	zabbix_noc => (16  * $kafka_servers),
 	slb_noc    => (16  * $kafka_servers),
 };

@@ -8,7 +8,7 @@ use JSON::XS qw(decode_json);
 
 my $url    = "http://localhost:8080";
 my $topics = {
-	events     => 256,
+	juggler    => 256,
 	zabbix_noc => 16,
 	slb_noc    => 16,
 };
