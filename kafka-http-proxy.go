@@ -382,8 +382,12 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 
 	res.Replicas, err = s.Client.Replicas(res.Topic, res.Partition)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
-		return
+		if err != sarama.ErrReplicaNotAvailable {
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
+			return
+		}
+		log.Printf("Error: Unable to get replicas: %v\n", err)
+		res.Replicas = make([]int32, 0)
 	}
 	res.ReplicasNum = len(res.Replicas)
 
@@ -443,8 +447,12 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 		r.Replicas, err = s.Client.Replicas(r.Topic, r.Partition)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
-			return
+			if err != sarama.ErrReplicaNotAvailable {
+				s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
+				return
+			}
+			log.Printf("Error: Unable to get replicas: %v\n", err)
+			r.Replicas = make([]int32, 0)
 		}
 		r.ReplicasNum = len(r.Replicas)
 
