@@ -511,16 +511,16 @@ func (s *Server) Run() error {
 	r := mux.NewRouter()
 	r.NotFoundHandler = http.HandlerFunc(s.NotFoundHandler)
 
-	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9]+}/{partition:[0-9]+}", s.SendHandler).
+	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.SendHandler).
 		Methods("POST")
 
-	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9]+}/{partition:[0-9]+}", s.GetHandler).
+	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.GetHandler).
 		Methods("GET")
 
-	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9]+}/{partition:[0-9]+}", s.GetPartitionInfoHandler).
+	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.GetPartitionInfoHandler).
 		Methods("GET")
 
-	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9]+}", s.GetTopicInfoHandler).
+	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}", s.GetTopicInfoHandler).
 		Methods("GET")
 
 	r.HandleFunc("/v1/info/topics", s.GetTopicListHandler).
