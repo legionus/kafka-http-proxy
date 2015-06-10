@@ -1,3 +1,10 @@
+kafka-http-proxy (0.3.5) unstable; urgency=low
+
+  * Handle ErrReplicaNotAvailable as empty replica list.
+  * Allow "_" and "-" in topic names.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 10 Jun 2015 18:21:24 +0300
+
 kafka-http-proxy (0.3.4) unstable; urgency=low
 
   * Cleanup helpers from contrib.
