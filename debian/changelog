@@ -1,3 +1,9 @@
+kafka-http-proxy (0.3.4) unstable; urgency=low
+
+  * Cleanup helpers from contrib.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 10 Jun 2015 13:37:07 +0300
+
 kafka-http-proxy (0.3.3) unstable; urgency=low
 
   * debian: Add dependencies.
