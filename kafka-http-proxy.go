@@ -39,7 +39,7 @@ var (
 	verbose = flag.Bool("verbose", false, "Turn on Sarama logging")
 )
 
-type JsonResponse struct {
+type JSONResponse struct {
 	Status string      `json:"status"`
 	Data   interface{} `json:"data"`
 }
@@ -79,7 +79,7 @@ type Server struct {
 	Stats   struct {
 		ResponsePostTime *hmetrics2.Histogram
 		ResponseGetTime  *hmetrics2.Histogram
-		HttpStatus       map[int]*hmetrics2.Counter
+		HTTPStatus       map[int]*hmetrics2.Counter
 	}
 }
 
@@ -87,7 +87,7 @@ func (s *Server) Close() error {
 	return nil
 }
 
-func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JsonResponse) {
+func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JSONResponse) {
 	w.Header().Set("Content-Type", "application/json")
 
 	b, err := json.MarshalIndent(v, "", "    ")
@@ -101,16 +101,16 @@ func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JsonRespons
 }
 
 func (s *Server) successResponse(w http.ResponseWriter, m interface{}) {
-	resp := &JsonResponse{
+	resp := &JSONResponse{
 		Status: "success",
 		Data:   m,
 	}
 	s.writeResponse(w, http.StatusOK, resp)
-	s.Stats.HttpStatus[http.StatusOK].Inc()
+	s.Stats.HTTPStatus[http.StatusOK].Inc()
 }
 
 func (s *Server) errorResponse(w http.ResponseWriter, status int, format string, args ...interface{}) {
-	resp := &JsonResponse{
+	resp := &JSONResponse{
 		Status: "error",
 		Data:   fmt.Sprintf(format, args...),
 	}
@@ -118,7 +118,7 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 		log.Printf("Error [%d]: %s\n", status, resp.Data)
 	}
 	s.writeResponse(w, status, resp)
-	s.Stats.HttpStatus[status].Inc()
+	s.Stats.HTTPStatus[status].Inc()
 }
 
 func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
@@ -176,10 +176,10 @@ func (s *Server) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
-	start_time := time.Now().UnixNano()
+	startTime := time.Now().UnixNano()
 	defer func() {
-		end_time := time.Now().UnixNano()
-		s.Stats.ResponsePostTime.AddPoint(float64(end_time - start_time))
+		endTime := time.Now().UnixNano()
+		s.Stats.ResponsePostTime.AddPoint(float64(endTime - startTime))
 	}()
 
 	kafka := &KafkaParameters{
@@ -235,10 +235,10 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
-	start_time := time.Now().UnixNano()
+	startTime := time.Now().UnixNano()
 	defer func() {
-		end_time := time.Now().UnixNano()
-		s.Stats.ResponseGetTime.AddPoint(float64(end_time - start_time))
+		endTime := time.Now().UnixNano()
+		s.Stats.ResponseGetTime.AddPoint(float64(endTime - startTime))
 	}()
 
 	var (
@@ -476,22 +476,22 @@ func (s *Server) InitStatistics() {
 	hmetrics2.MustRegisterPackageMetric("Response.POST.Time", s.Stats.ResponsePostTime)
 	hmetrics2.MustRegisterPackageMetric("Response.GET.Time", s.Stats.ResponseGetTime)
 
-	s.Stats.HttpStatus = make(map[int]*hmetrics2.Counter)
-	s.Stats.HttpStatus[200] = hmetrics2.NewCounter()
-	s.Stats.HttpStatus[400] = hmetrics2.NewCounter()
-	s.Stats.HttpStatus[404] = hmetrics2.NewCounter()
-	s.Stats.HttpStatus[416] = hmetrics2.NewCounter()
-	s.Stats.HttpStatus[500] = hmetrics2.NewCounter()
-	s.Stats.HttpStatus[502] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus = make(map[int]*hmetrics2.Counter)
+	s.Stats.HTTPStatus[200] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus[400] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus[404] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus[416] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus[500] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus[502] = hmetrics2.NewCounter()
 
-	for code, _ := range s.Stats.HttpStatus {
-		hmetrics2.MustRegisterPackageMetric(fmt.Sprintf("Http.Status.%d", code), s.Stats.HttpStatus[code])
+	for code := range s.Stats.HTTPStatus {
+		hmetrics2.MustRegisterPackageMetric(fmt.Sprintf("Http.Status.%d", code), s.Stats.HTTPStatus[code])
 	}
 
 	type RuntimeStat struct {
 		Goroutines int
 		CgoCall    int64
-		Cpu        int
+		CPU        int
 		GoMaxProcs int
 	}
 
@@ -499,7 +499,7 @@ func (s *Server) InitStatistics() {
 		data := &RuntimeStat{
 			Goroutines: runtime.NumGoroutine(),
 			CgoCall:    runtime.NumCgoCall(),
-			Cpu:        runtime.NumCPU(),
+			CPU:        runtime.NumCPU(),
 			GoMaxProcs: runtime.GOMAXPROCS(0),
 		}
 
@@ -659,11 +659,11 @@ func main() {
 	}
 	defer server.Client.Close()
 
-	sig_chan := make(chan os.Signal, 1)
-	signal.Notify(sig_chan, syscall.SIGHUP)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGHUP)
 	go func() {
 		for {
-			_ = <-sig_chan
+			_ = <-sigChan
 			if err := server.Logfile.Reopen(); err != nil {
 				panic("Unable to reopen logfile")
 			}

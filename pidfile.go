@@ -68,7 +68,7 @@ func (p *Pidfile) Read() (int, error) {
 	}
 
 	if n != 1 {
-		return 0, fmt.Errorf("error parsing pid from %s: %s", p.Name, err)
+		return 0, fmt.Errorf("error parsing pid from %s: %s", p.Name(), err)
 	}
 
 	return pid, nil
