@@ -8,7 +8,6 @@ use LWP::UserAgent;
 use JSON::XS qw(decode_json);
 
 my $url    = "http://localhost:8080";
-my @topics = qw(events);
 
 my $hostname = hostname;
 $hostname =~ s/\./_/g;
