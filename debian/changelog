@@ -1,3 +1,9 @@
+kafka-http-proxy (0.3.6) unstable; urgency=low
+
+  * Add more checks.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 17 Jun 2015 12:24:57 +0300
+
 kafka-http-proxy (0.3.5) unstable; urgency=low
 
   * Handle ErrReplicaNotAvailable as empty replica list.
