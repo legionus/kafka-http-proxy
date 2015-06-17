@@ -1,0 +1,43 @@
+#!/usr/bin/perl
+
+# https://git-wip-us.apache.org/repos/asf?p=kafka.git;a=blob;f=core/src/main/scala/kafka/server/BrokerStates.scala;hb=719f2bddd147d4583a15ee8398bb0edccbbcc3f4#l20
+#
+# 0 = Not Running
+# 1 = Starting
+# 2 = Recovering From Unclean Shutdown
+# 3 = Running As Broker
+# 4 = Running As Controller
+# 6 = Pending Controlled Shutdown
+# 7 = Broker Shutting Down
+
+use strict;
+use warnings;
+
+use Sys::Hostname;
+use LWP::UserAgent;
+
+my $server = hostname;
+my $url = "http://$server:7777";
+my $jmx = "$server:9999";
+
+my $name = $server;
+$name =~ s/\./_/g;
+
+my $metric_time   = int(time());
+my $metric_prefix = "one_min.$name.";
+
+my $mbean = 'kafka.server:type=KafkaServer,name=BrokerState';
+
+my $ua  = LWP::UserAgent->new;
+my $req = HTTP::Request->new("GET", "$url/jmxproxy/$jmx/$mbean/Value");
+
+my $res = $ua->request($req);
+die("$jmx: " . $res->status_line)
+	if !$res->is_success;
+
+my $content = $res->content;
+die("Bad answer")
+	if $content !~ /^[0-9]+$/;
+
+print "$metric_prefix";
+print "Kafka.broker.state $content $metric_time\n";

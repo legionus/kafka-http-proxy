@@ -1,0 +1,56 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use threads;
+use LWP::UserAgent;
+
+my $jmxproxy_port = 7777;
+my $jmxkafka_port = 9999;
+my $mbean = 'kafka.controller:type=KafkaController,name=ActiveControllerCount';
+
+my $dc  = [
+	'kafka-test1-sas.mon.yandex-team.ru',
+	'kafka-test1-iva.mon.yandex-team.ru',
+	'kafka-test1-myt5.mon.yandex-team.ru',
+];
+
+sub ans {
+	my ($code, $msg) = @_;
+	print "PASSIVE-CHECK:active_controller_count;$code;$msg\n";
+	exit(0);
+}
+
+sub worker {
+	my ($host) = @_;
+	my $ua  = LWP::UserAgent->new;
+	my $req = HTTP::Request->new("GET", "http://$host:$jmxproxy_port/jmxproxy/$host:$jmxkafka_port/$mbean/Value");
+
+	my $res = $ua->request($req);
+	return (-1, $res->status_line)
+		if !$res->is_success;
+
+	my $content = $res->content;
+	return (-1, "Bad answer")
+		if $content !~ /^[0-9]+$/;
+
+	return ($content + 0, undef);
+}
+
+my $clients = {};
+$clients->{$_}->{thread} = threads->create({'array' => 1}, \&worker, $_) foreach @$dc;
+$clients->{$_}->{result} = [ $clients->{$_}->{thread}->join() ]          foreach @$dc;
+
+my $active = 0;
+foreach my $host (@{$dc}) {
+	ans(2, "$host: " . $clients->{$host}->{result}->[1])
+		if $clients->{$host}->{result}->[0] < 0;
+	$active++
+		if $clients->{$host}->{result}->[0] > 0;
+}
+
+ans(2, "Too many active controllers")
+	if $active > 1;
+
+ans(0, "OK");

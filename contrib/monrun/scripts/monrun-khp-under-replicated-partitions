@@ -1,0 +1,36 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Sys::Hostname;
+use LWP::UserAgent;
+
+my $server = hostname;
+my $url = "http://$server:7777";
+my $jmx = "$server:9999";
+
+my $mbean = 'kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions';
+
+sub ans {
+	my ($code, $msg) = @_;
+	print "PASSIVE-CHECK:under_replicated_partitions;$code;$msg\n";
+	exit(0);
+}
+
+my $ua  = LWP::UserAgent->new;
+my $req = HTTP::Request->new("GET", "$url/jmxproxy/$jmx/$mbean/Value");
+
+my $res = $ua->request($req);
+ans(2, "$jmx: " . $res->status_line)
+	if !$res->is_success;
+
+my $content = $res->content;
+ans(2, "Bad answer")
+	if $content !~ /^[0-9]+$/;
+
+my $val = $content + 0;
+ans(2, "$jmx: $val of under replicated partitions")
+	if $val > 0;
+
+ans(0, "OK");
