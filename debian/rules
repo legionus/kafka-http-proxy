@@ -32,6 +32,7 @@ install_conf:
 	install -D -m 644 $(DEBIAN_DIR)/kafka-http-proxy.conf.init $(DEBIAN_DIR)/$(PROJECT)/etc/init/kafka-http-proxy.conf
 	install -D -m 644 $(CURDIR)/contrib/logrotate/kafka-http-proxy $(DEBIAN_DIR)/$(PROJECT)/etc/logrotate.d/kafka-http-proxy
 	install -D -m 644 $(CURDIR)/server.cfg $(DEBIAN_DIR)/$(PROJECT)/$(SYSCONF_DIR)/khp.cfg$(CONFIG_SUFFIX)
+	install -D -m 644 $(CURDIR)/kafka.json $(DEBIAN_DIR)/$(PROJECT)/$(SYSCONF_DIR)/kafka.json$(CONFIG_SUFFIX)
 
 install_monrun:
 	mkdir -p -- $(DEBIAN_DIR)/$(PROJECT)/etc/monrun/conf.d

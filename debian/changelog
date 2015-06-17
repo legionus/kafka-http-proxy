@@ -1,3 +1,9 @@
+kafka-http-proxy (0.3.7) unstable; urgency=low
+
+  * Use config to setup checks.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 17 Jun 2015 17:29:35 +0300
+
 kafka-http-proxy (0.3.6) unstable; urgency=low
 
   * Add more checks.
