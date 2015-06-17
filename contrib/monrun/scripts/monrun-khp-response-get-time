@@ -4,9 +4,23 @@ use strict;
 use warnings;
 
 use LWP::UserAgent;
-use JSON::XS qw(decode_json);
+use JSON qw(decode_json);
 
-my $url    = "http://localhost:8080";
+my $config_file = "/etc/yandex/khp/kafka.json";
+
+sub read_config {
+	my $json_text = "";
+	{
+		local $/;
+		open(my $fh, '<', $config_file);
+		$json_text = <$fh>;
+		close($fh);
+	}
+	return JSON->new->utf8->relaxed->decode($json_text);
+}
+
+my $config = read_config();
+my $url    = "http://localhost:" . $config->{khp}->{port};
 
 sub ans {
 	my ($code, $msg) = @_;

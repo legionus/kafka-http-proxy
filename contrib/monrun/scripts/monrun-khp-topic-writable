@@ -4,14 +4,23 @@ use strict;
 use warnings;
 
 use LWP::UserAgent;
-use JSON::XS qw(decode_json);
+use JSON qw(decode_json);
 
-my $url    = "http://localhost:8080";
-my $topics = {
-	juggler    => 256,
-	zabbix_noc => 16,
-	slb_noc    => 16,
-};
+my $config_file = "/etc/yandex/khp/kafka.json";
+
+sub read_config {
+	my $json_text = "";
+	{
+		local $/;
+		open(my $fh, '<', $config_file);
+		$json_text = <$fh>;
+		close($fh);
+	}
+	return JSON->new->utf8->relaxed->decode($json_text);
+}
+
+my $config = read_config();
+my $url    = sprintf 'http://%s:%s', $config->{khp}->{host}, $config->{khp}->{port};
 
 sub ans {
 	my ($code, $msg) = @_;
@@ -19,9 +28,10 @@ sub ans {
 	exit(0);
 }
 
-foreach my $topic (keys %{$topics}) {
+foreach my $topic (@{$config->{kafka}->{topics}}) {
+	my $name = $topic->{name};
 	my $ua  = LWP::UserAgent->new;
-	my $req = HTTP::Request->new("GET", "$url/v1/info/topics/$topic");
+	my $req = HTTP::Request->new("GET", "$url/v1/info/topics/$name");
 	my $res = $ua->request($req);
 
 	if (!$res->is_success) {
@@ -49,7 +59,7 @@ foreach my $topic (keys %{$topics}) {
 	}
 
 	ans(0, "OK")
-		if $writable == $topics->{$topic};
+		if $writable == $topic->{partitions};
 
-	ans(2, "Topic $topic, writable topics $writable != " . $topics->{$topic});
+	ans(2, "Topic $topic, writable topics $writable != " . $topic->{partitions});
 }

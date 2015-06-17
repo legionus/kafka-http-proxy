@@ -5,16 +5,28 @@ use warnings;
 
 use threads;
 use LWP::UserAgent;
+use JSON;
 
-my $jmxproxy_port = 7777;
-my $jmxkafka_port = 9999;
+my $config_file = "/etc/yandex/khp/kafka.json";
+
+sub read_config {
+	my $json_text = "";
+	{
+		local $/;
+		open(my $fh, '<', $config_file);
+		$json_text = <$fh>;
+		close($fh);
+	}
+	return JSON->new->utf8->relaxed->decode($json_text);
+}
+
+my $config = read_config();
+
+my $jmxproxy_port = $config->{jmxproxy}->{port};
+my $jmxkafka_port = $config->{kafka}->{jmxport};
+my $dc            = $config->{kafka}->{hosts};
+
 my $mbean = 'kafka.controller:type=KafkaController,name=ActiveControllerCount';
-
-my $dc  = [
-	'kafka-test1-sas.mon.yandex-team.ru',
-	'kafka-test1-iva.mon.yandex-team.ru',
-	'kafka-test1-myt5.mon.yandex-team.ru',
-];
 
 sub ans {
 	my ($code, $msg) = @_;

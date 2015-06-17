@@ -5,10 +5,23 @@ use warnings;
 
 use Sys::Hostname;
 use LWP::UserAgent;
-use JSON::XS qw(decode_json);
+use JSON qw(decode_json);
 
-my $url    = "http://localhost:8080";
-my @topics = qw(juggler zabbix_noc slb_noc);
+my $config_file = "/etc/yandex/khp/kafka.json";
+
+sub read_config {
+	my $json_text = "";
+	{
+		local $/;
+		open(my $fh, '<', $config_file);
+		$json_text = <$fh>;
+		close($fh);
+	}
+	return JSON->new->utf8->relaxed->decode($json_text);
+}
+
+my $config = read_config();
+my $url    = sprintf 'http://localhost:%s', $config->{khp}->{port};
 
 my $hostname = hostname;
 $hostname =~ s/\./_/g;
@@ -16,10 +29,11 @@ $hostname =~ s/\./_/g;
 my $metric_time   = int(time());
 my $metric_prefix = "one_min.$hostname.";
 
-foreach my $topic (@topics) {
-	my $ua  = LWP::UserAgent->new;
-	my $req = HTTP::Request->new("GET", "$url/v1/info/topics/$topic");
-	my $res = $ua->request($req);
+foreach my $topic (@{$config->{kafka}->{topics}}) {
+	my $name = $topic->{name};
+	my $ua   = LWP::UserAgent->new;
+	my $req  = HTTP::Request->new("GET", "$url/v1/info/topics/$name");
+	my $res  = $ua->request($req);
 
 	if (!$res->is_success) {
 		die $res->status_line;
@@ -46,18 +60,18 @@ foreach my $topic (@topics) {
 	}
 
 	print "$metric_prefix";
-	print "topic.$topic.replicas.sum $sum";
+	print "topic.$name.replicas.sum $sum";
 	print " $metric_time" if $metric_time;
 	print "\n";
 
 	print "$metric_prefix";
-	print "topic.$topic.partitions.writable $writable";
+	print "topic.$name.partitions.writable $writable";
 	print " $metric_time" if $metric_time;
 	print "\n";
 
 	while (my ($k,$v) = each %{$replicas}) {
 		print "$metric_prefix";
-		print "topic.$topic.broker.$k.sum $v";
+		print "topic.$name.broker.$k.sum $v";
 		print " $metric_time" if $metric_time;
 		print "\n";
 	}

@@ -1,0 +1,18 @@
+{
+	"kafka": {
+		"port": 9092,
+		"hosts": [
+			"localhost"
+		],
+		"topics": [
+			{ "name": "topic", "partitions": 256 }
+		],
+		"jmxport": 9999
+	},
+	"jmxproxy": {
+		"port": 7777
+	},
+	"khp": {
+		"port": 8080
+	}
+}

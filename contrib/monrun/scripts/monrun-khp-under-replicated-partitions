@@ -5,10 +5,26 @@ use warnings;
 
 use Sys::Hostname;
 use LWP::UserAgent;
+use JSON;
 
-my $server = hostname;
-my $url = "http://$server:7777";
-my $jmx = "$server:9999";
+my $config_file = "/etc/yandex/khp/kafka.json";
+
+sub read_config {
+	my $json_text = "";
+	{
+		local $/;
+		open(my $fh, '<', $config_file);
+		$json_text = <$fh>;
+		close($fh);
+	}
+	return JSON->new->utf8->relaxed->decode($json_text);
+}
+
+my $config = read_config();
+
+my $srv = hostname;
+my $url = sprintf 'http://localhost:%s', $config->{jmxproxy}->{port};
+my $jmx = sprintf '%s:%s', $srv, $config->{kafka}->{jmxport};
 
 my $mbean = 'kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions';
 
