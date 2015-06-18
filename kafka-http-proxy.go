@@ -497,18 +497,33 @@ func (s *Server) InitStatistics() {
 	}
 
 	type RuntimeStat struct {
-		Goroutines int
-		CgoCall    int64
-		CPU        int
-		GoMaxProcs int
+		Goroutines      int
+		CgoCall         int64
+		CPU             int
+		GoMaxProcs      int
+		UsedDescriptors int
 	}
 
 	expvar.Publish("runtime", expvar.Func(func() interface{} {
 		data := &RuntimeStat{
-			Goroutines: runtime.NumGoroutine(),
-			CgoCall:    runtime.NumCgoCall(),
-			CPU:        runtime.NumCPU(),
-			GoMaxProcs: runtime.GOMAXPROCS(0),
+			Goroutines:      runtime.NumGoroutine(),
+			CgoCall:         runtime.NumCgoCall(),
+			CPU:             runtime.NumCPU(),
+			GoMaxProcs:      runtime.GOMAXPROCS(0),
+			UsedDescriptors: 0,
+		}
+
+		var nofileLimit syscall.Rlimit
+		err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &nofileLimit)
+		if err != nil {
+			return data
+		}
+
+		for i := 0; i < int(nofileLimit.Cur); i++ {
+			_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(i), syscall.F_GETFD, 0)
+			if errno == 0 {
+				data.UsedDescriptors++
+			}
 		}
 
 		return data
