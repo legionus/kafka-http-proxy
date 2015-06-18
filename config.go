@@ -86,7 +86,7 @@ func (c *Config) SetDefaults() {
 	c.Consumer.FetchDefault = 32768
 }
 
-func (c *Config) KafkaConfig() *sarama.Config {
+func (c *Config) KafkaConfig() (*sarama.Config, error) {
 	k := sarama.NewConfig()
 
 	k.Net.MaxOpenRequests = c.Net.MaxOpenRequests
@@ -116,5 +116,9 @@ func (c *Config) KafkaConfig() *sarama.Config {
 	k.Consumer.Fetch.Max = c.Consumer.FetchMax
 	k.Consumer.Fetch.Default = c.Consumer.FetchDefault
 
-	return k
+	if err := k.Validate(); err != nil {
+		return nil, err
+	}
+
+	return k, nil
 }

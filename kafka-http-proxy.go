@@ -675,7 +675,13 @@ func main() {
 	}
 	runtime.GOMAXPROCS(server.Cfg.Global.GoMaxProcs)
 
-	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, server.Cfg.KafkaConfig())
+	kafkaConf, err := server.Cfg.KafkaConfig()
+	if err != nil {
+		log.Fatal("Bad config: ", err.Error())
+		os.Exit(1)
+	}
+
+	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, kafkaConf)
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
 		os.Exit(1)
