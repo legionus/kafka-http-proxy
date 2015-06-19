@@ -9,7 +9,6 @@ package main
 
 import (
 	"code.google.com/p/gcfg"
-	"github.com/Shopify/sarama"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/orofarne/hmetrics2"
@@ -36,7 +35,7 @@ var (
 	addr    = flag.String("addr", "", "The address to bind to")
 	brokers = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
 	config  = flag.String("config", "", "Path to configuration file")
-	verbose = flag.Bool("verbose", false, "Turn on Sarama logging")
+	verbose = flag.Bool("verbose", false, "Turn on logging")
 )
 
 type JSONResponse struct {
@@ -58,7 +57,7 @@ type ResponseMessages struct {
 type ResponsePartitionInfo struct {
 	Topic        string  `json:"topic"`
 	Partition    int32   `json:"partition"`
-	Leader       string  `json:"leader"`
+	Leader       int32   `json:"leader"`
 	OffsetOldest int64   `json:"offsetfrom"`
 	OffsetNewest int64   `json:"offsetto"`
 	Writable     bool    `json:"writable"`
@@ -75,7 +74,7 @@ type Server struct {
 	Cfg     Config
 	Logfile *Logfile
 	Pidfile *Pidfile
-	Client  sarama.Client
+	Client  *KafkaClient
 	Stats   struct {
 		ResponsePostTime *hmetrics2.Histogram
 		ResponseGetTime  *hmetrics2.Histogram
@@ -200,7 +199,13 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parts, err := s.Client.Partitions(kafka.Topic)
+	meta, err := s.Client.GetMetadata()
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		return
+	}
+
+	parts, err := meta.Partitions(kafka.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 		return
@@ -211,19 +216,14 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	producer, err := sarama.NewSyncProducerFromClient(s.Client)
+	producer, err := s.Client.NewProducer(s.Cfg)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make producer: %v", err)
 		return
 	}
 	defer producer.Close()
 
-	_, kafka.Offset, err = producer.SendMessage(&sarama.ProducerMessage{
-		Topic:     kafka.Topic,
-		Partition: kafka.Partition,
-		Value:     sarama.StringEncoder(msg),
-	})
-
+	kafka.Offset, err = producer.SendMessage(kafka.Topic, kafka.Partition, msg)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to store your data: %v", err)
 		return
@@ -263,7 +263,13 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	length := toInt64(varsLength)
 
-	parts, err := s.Client.Partitions(o.Query.Topic)
+	meta, err := s.Client.GetMetadata()
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		return
+	}
+
+	parts, err := meta.Partitions(o.Query.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 		return
@@ -274,7 +280,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offsetFrom, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetOldest)
+	offsetFrom, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetOldest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
@@ -287,7 +293,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		o.Query.Offset = toInt64(varsOffset)
 	}
 
-	offsetTo, err := s.Client.GetOffset(o.Query.Topic, o.Query.Partition, sarama.OffsetNewest)
+	offsetTo, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
@@ -307,21 +313,23 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	consumer, err := sarama.NewConsumerFromClient(s.Client)
+	consumer, err := s.Client.NewConsumer(s.Cfg, o.Query.Topic, o.Query.Partition, o.Query.Offset)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
 		return
 	}
 	defer consumer.Close()
 
-	pc, err := consumer.ConsumePartition(o.Query.Topic, o.Query.Partition, o.Query.Offset)
-	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to make partition consumer: %v", err)
-		return
-	}
-	defer pc.Close()
+	for {
+		msg, err := consumer.Message()
+		if err != nil {
+			if err == KafkaErrNoData {
+				break
+			}
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get message: %v", err)
+			return
+		}
 
-	for msg := range pc.Messages() {
 		var m json.RawMessage
 
 		if err := json.Unmarshal(msg.Value, &m); err != nil {
@@ -342,14 +350,20 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 	res := []ResponseTopicListInfo{}
 
-	topics, err := s.Client.Topics()
+	meta, err := s.Client.GetMetadata()
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		return
+	}
+
+	topics, err := meta.Topics()
 	if err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Unable to get topics: %v", err)
 		return
 	}
 
 	for _, topic := range topics {
-		parts, err := s.Client.Partitions(topic)
+		parts, err := meta.Partitions(topic)
 		if err != nil {
 			s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
 			return
@@ -372,17 +386,21 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 		Partition: toInt32(vars["partition"]),
 	}
 
-	broker, err := s.Client.Leader(res.Topic, res.Partition)
+	meta, err := s.Client.GetMetadata()
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		return
+	}
+
+	res.Leader, err = meta.Leader(res.Topic, res.Partition)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
 		return
 	}
 
-	res.Leader = broker.Addr()
-
-	res.Replicas, err = s.Client.Replicas(res.Topic, res.Partition)
+	res.Replicas, err = meta.Replicas(res.Topic, res.Partition)
 	if err != nil {
-		if err != sarama.ErrReplicaNotAvailable {
+		if err != KafkaErrReplicaNotAvailable {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
 			return
 		}
@@ -391,19 +409,19 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 	}
 	res.ReplicasNum = len(res.Replicas)
 
-	res.OffsetNewest, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetNewest)
+	res.OffsetNewest, err = meta.GetOffsetInfo(res.Topic, res.Partition, KafkaOffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
 		return
 	}
 
-	res.OffsetOldest, err = s.Client.GetOffset(res.Topic, res.Partition, sarama.OffsetOldest)
+	res.OffsetOldest, err = meta.GetOffsetInfo(res.Topic, res.Partition, KafkaOffsetOldest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get oldest offset: %v", err)
 		return
 	}
 
-	wp, err := s.Client.WritablePartitions(res.Topic)
+	wp, err := meta.WritablePartitions(res.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
 		return
@@ -419,13 +437,19 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := []ResponsePartitionInfo{}
 
-	writable, err := s.Client.WritablePartitions(vars["topic"])
+	meta, err := s.Client.GetMetadata()
+	if err != nil {
+		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		return
+	}
+
+	writable, err := meta.WritablePartitions(vars["topic"])
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
 		return
 	}
 
-	parts, err := s.Client.Partitions(vars["topic"])
+	parts, err := meta.Partitions(vars["topic"])
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
 		return
@@ -438,16 +462,15 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 			Writable:  inSlice(int32(partition), writable),
 		}
 
-		broker, err := s.Client.Leader(r.Topic, r.Partition)
+		r.Leader, err = meta.Leader(r.Topic, r.Partition)
 		if err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
 			return
 		}
-		r.Leader = broker.Addr()
 
-		r.Replicas, err = s.Client.Replicas(r.Topic, r.Partition)
+		r.Replicas, err = meta.Replicas(r.Topic, r.Partition)
 		if err != nil {
-			if err != sarama.ErrReplicaNotAvailable {
+			if err != KafkaErrReplicaNotAvailable {
 				s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
 				return
 			}
@@ -456,13 +479,13 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		r.ReplicasNum = len(r.Replicas)
 
-		r.OffsetNewest, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetNewest)
+		r.OffsetNewest, err = meta.GetOffsetInfo(r.Topic, r.Partition, KafkaOffsetNewest)
 		if err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
 			return
 		}
 
-		r.OffsetOldest, err = s.Client.GetOffset(r.Topic, r.Partition, sarama.OffsetOldest)
+		r.OffsetOldest, err = meta.GetOffsetInfo(r.Topic, r.Partition, KafkaOffsetOldest)
 		if err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to get oldest offset: %v", err)
 			return
@@ -620,7 +643,6 @@ func main() {
 	}
 
 	if *verbose {
-		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
 		server.Cfg.Global.Verbose = true
 	}
 
@@ -675,13 +697,13 @@ func main() {
 	}
 	runtime.GOMAXPROCS(server.Cfg.Global.GoMaxProcs)
 
-	kafkaConf, err := server.Cfg.KafkaConfig()
+	kafkaConf, err := KafkaConfig(server.Cfg)
 	if err != nil {
 		log.Fatal("Bad config: ", err.Error())
 		os.Exit(1)
 	}
 
-	server.Client, err = sarama.NewClient(server.Cfg.Kafka.Broker, kafkaConf)
+	server.Client, err = NewClient(server.Cfg.Kafka.Broker, kafkaConf)
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
 		os.Exit(1)
