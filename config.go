@@ -58,18 +58,18 @@ func (c *Config) SetDefaults() {
 	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
 	c.Global.Pidfile = "/run/kafka-http-proxy.pid"
 
-	c.Broker.DialTimeout.Duration = 10 * time.Second
-	c.Broker.LeaderRetryLimit = 10
+	c.Broker.DialTimeout.Duration = 500 * time.Millisecond
+	c.Broker.LeaderRetryLimit = 2
 	c.Broker.LeaderRetryWait.Duration = 500 * time.Millisecond
 
 	c.Producer.RequestTimeout.Duration = 5 * time.Second
-	c.Producer.RetryLimit = 5
+	c.Producer.RetryLimit = 2
 	c.Producer.RetryWait.Duration = 200 * time.Millisecond
 
 	c.Consumer.RequestTimeout.Duration = 50 * time.Millisecond
-	c.Consumer.RetryLimit = -1
+	c.Consumer.RetryLimit = 2
 	c.Consumer.RetryWait.Duration = 50 * time.Millisecond
-	c.Consumer.RetryErrLimit = -1
+	c.Consumer.RetryErrLimit = 2
 	c.Consumer.RetryErrWait.Duration = 50 * time.Millisecond
 	c.Consumer.MinFetchSize = 1
 	c.Consumer.MaxFetchSize = 2000000
