@@ -763,6 +763,7 @@ func main() {
 	}
 	defer server.Logfile.Close()
 
+	// Setup global log
 	log.SetOutput(server.Logfile)
 
 	if server.Cfg.Global.Address == "" {
@@ -780,13 +781,9 @@ func main() {
 	}
 	runtime.GOMAXPROCS(server.Cfg.Global.GoMaxProcs)
 
-	kafkaConf, err := KafkaConfig(server.Cfg)
-	if err != nil {
-		log.Fatal("Bad config: ", err.Error())
-		os.Exit(1)
-	}
+	server.Cfg.Logfile = server.Logfile
 
-	server.Client, err = NewClient(server.Cfg.Kafka.Broker, kafkaConf)
+	server.Client, err = NewClient(server.Cfg)
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
 		os.Exit(1)

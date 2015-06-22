@@ -8,6 +8,7 @@
 package main
 
 import (
+	"io"
 	"time"
 )
 
@@ -33,6 +34,7 @@ type Config struct {
 		Broker []string
 	}
 	Broker struct {
+		NumConns         int64
 		DialTimeout      CfgDuration
 		LeaderRetryLimit int
 		LeaderRetryWait  CfgDuration
@@ -51,6 +53,8 @@ type Config struct {
 		MinFetchSize   int32
 		MaxFetchSize   int32
 	}
+
+	Logfile io.Writer
 }
 
 func (c *Config) SetDefaults() {
@@ -60,6 +64,7 @@ func (c *Config) SetDefaults() {
 	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
 	c.Global.Pidfile = "/run/kafka-http-proxy.pid"
 
+	c.Broker.NumConns = 100
 	c.Broker.DialTimeout.Duration = 500 * time.Millisecond
 	c.Broker.LeaderRetryLimit = 2
 	c.Broker.LeaderRetryWait.Duration = 500 * time.Millisecond

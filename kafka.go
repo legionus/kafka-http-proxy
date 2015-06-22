@@ -10,6 +10,9 @@ package main
 import (
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
+
+	"fmt"
+	"log"
 )
 
 var (
@@ -20,43 +23,74 @@ var (
 	KafkaErrNoData              = kafka.ErrNoData
 )
 
-func KafkaConfig(settings Config) (kafka.BrokerConf, error) {
-	k := kafka.NewBrokerConf("kafka-http-proxy")
-
-	k.DialTimeout = settings.Broker.DialTimeout.Duration
-	k.LeaderRetryLimit = settings.Broker.LeaderRetryLimit
-	k.LeaderRetryWait = settings.Broker.LeaderRetryWait.Duration
-
-	return k, nil
-}
-
 type KafkaClient struct {
-	Brokers *kafka.Broker
+	numBrokers int64
+	Brokers    chan *kafka.Broker
 }
 
-func NewClient(addrs []string, conf kafka.BrokerConf) (*KafkaClient, error) {
-	var err error
+func NewClient(settings Config) (*KafkaClient, error) {
+	conf := kafka.NewBrokerConf("kafka-http-proxy")
 
-	client := &KafkaClient{}
+	conf.Log = log.New(settings.Logfile, "[kafka/broker] ", log.LstdFlags)
+	conf.DialTimeout = settings.Broker.DialTimeout.Duration
+	conf.LeaderRetryLimit = settings.Broker.LeaderRetryLimit
+	conf.LeaderRetryWait = settings.Broker.LeaderRetryWait.Duration
 
-	client.Brokers, err = kafka.Dial(addrs, conf)
-	if err != nil {
-		return nil, err
+	if settings.Global.Verbose {
+		log.Println("Gona create broker pool = ", settings.Broker.NumConns)
+	}
+
+	client := &KafkaClient{
+		numBrokers: 0,
+		Brokers:    make(chan *kafka.Broker, settings.Broker.NumConns),
+	}
+
+	for client.numBrokers < settings.Broker.NumConns {
+		b, err := kafka.Dial(settings.Kafka.Broker, conf)
+		if err != nil {
+			client.Close()
+			return nil, err
+		}
+
+		client.Brokers <- b
+		client.numBrokers++
 	}
 
 	return client, nil
 }
 
 func (k *KafkaClient) Close() error {
-	k.Brokers.Close()
+	i := int64(0)
+	for i < k.numBrokers {
+		broker := <-k.Brokers
+		broker.Close()
+		i++
+	}
 	return nil
+}
+
+func (k *KafkaClient) Broker() (*kafka.Broker, error) {
+	select {
+	case broker, ok := <-k.Brokers:
+		if ok {
+			return broker, nil
+		}
+	default:
+	}
+	return nil, fmt.Errorf("no brokers available")
 }
 
 func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
 	var err error
 
+	broker, err := k.Broker()
+	if err != nil {
+		return nil, err
+	}
+
 	conf := kafka.NewConsumerConf(topic, partitionID)
 
+	conf.Log = log.New(settings.Logfile, "[kafka/consumer] ", log.LstdFlags)
 	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
 	conf.RetryLimit = settings.Consumer.RetryLimit
 	conf.RetryWait = settings.Consumer.RetryWait.Duration
@@ -64,46 +98,60 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 	conf.RetryErrWait = settings.Consumer.RetryErrWait.Duration
 	conf.MinFetchSize = settings.Consumer.MinFetchSize
 	conf.MaxFetchSize = settings.Consumer.MaxFetchSize
-
 	conf.StartOffset = offset
 
-	c := &KafkaConsumer{}
+	consumer, err := broker.Consumer(conf)
+	if err != nil {
+		k.Brokers <- broker
+		return nil, err
+	}
 
-	c.consumer, err = k.Brokers.Consumer(conf)
+	return &KafkaConsumer{
+		client:   k,
+		broker:   broker,
+		consumer: consumer,
+	}, nil
+}
+
+func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
+	broker, err := k.Broker()
 	if err != nil {
 		return nil, err
 	}
 
-	return c, nil
-}
-
-func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 	conf := kafka.NewProducerConf()
 
+	conf.Log = log.New(settings.Logfile, "[kafka/producer] ", log.LstdFlags)
 	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration
 	conf.RetryLimit = settings.Producer.RetryLimit
 	conf.RetryWait = settings.Producer.RetryWait.Duration
 	conf.RequiredAcks = proto.RequiredAcksAll
 
-	p := &KafkaProducer{
-		producer: k.Brokers.Producer(conf),
-	}
-
-	return p, nil
+	return &KafkaProducer{
+		client:   k,
+		broker:   broker,
+		producer: broker.Producer(conf),
+	}, nil
 }
 
 func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
 	var err error
 
-	meta := &KafkaMetadata{
-		client: k,
-	}
-
-	meta.Metadata, err = k.Brokers.Metadata()
+	broker, err := k.Broker()
 	if err != nil {
 		return nil, err
 	}
 
+	meta := &KafkaMetadata{
+		client: k,
+	}
+	meta.Metadata, err = broker.Metadata()
+
+	k.Brokers <- broker
+
+	if err != nil {
+		return nil, err
+	}
 	return meta, nil
 }
 
@@ -208,20 +256,31 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 }
 
 func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int) (offset int64, err error) {
+	broker, err := m.client.Broker()
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		m.client.Brokers <- broker
+	}()
+
 	switch oType {
 	case KafkaOffsetNewest:
-		offset, err = m.client.Brokers.OffsetLatest(topic, partitionID)
+		offset, err = broker.OffsetLatest(topic, partitionID)
 	case KafkaOffsetOldest:
-		offset, err = m.client.Brokers.OffsetEarliest(topic, partitionID)
+		offset, err = broker.OffsetEarliest(topic, partitionID)
 	}
 	return
 }
 
 type KafkaConsumer struct {
+	client   *KafkaClient
+	broker   *kafka.Broker
 	consumer kafka.Consumer
 }
 
 func (c *KafkaConsumer) Close() error {
+	c.client.Brokers <- c.broker
 	return nil
 }
 
@@ -230,10 +289,13 @@ func (c *KafkaConsumer) Message() (*proto.Message, error) {
 }
 
 type KafkaProducer struct {
+	client   *KafkaClient
+	broker   *kafka.Broker
 	producer kafka.Producer
 }
 
 func (p *KafkaProducer) Close() error {
+	p.client.Brokers <- p.broker
 	return nil
 }
 
