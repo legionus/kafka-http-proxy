@@ -27,6 +27,7 @@ type Config struct {
 		Pidfile    string
 		Verbose    bool
 		GoMaxProcs int
+		MaxConns   int64
 	}
 	Kafka struct {
 		Broker []string
@@ -55,6 +56,7 @@ type Config struct {
 func (c *Config) SetDefaults() {
 	c.Global.Verbose = false
 	c.Global.GoMaxProcs = 0
+	c.Global.MaxConns = 1000000
 	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
 	c.Global.Pidfile = "/run/kafka-http-proxy.pid"
 
