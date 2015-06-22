@@ -27,6 +27,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -70,12 +71,22 @@ type ResponseTopicListInfo struct {
 	Partitions int    `json:"partitions"`
 }
 
+type ConnTrack struct {
+	ConnID int64
+	Conns  int64
+}
+
 type Server struct {
-	Cfg     Config
+	Cfg Config
+
 	Logfile *Logfile
 	Pidfile *Pidfile
 	Client  *KafkaClient
-	Stats   struct {
+
+	lastConnID int64
+	connsCount int64
+
+	Stats struct {
 		ResponsePostTime *hmetrics2.Histogram
 		ResponseGetTime  *hmetrics2.Histogram
 		HTTPStatus       map[int]*hmetrics2.Counter
@@ -84,6 +95,29 @@ type Server struct {
 
 func (s *Server) Close() error {
 	return nil
+}
+
+func (s *Server) newConnTrack(r *http.Request) ConnTrack {
+	cl := ConnTrack{
+		ConnID: atomic.AddInt64(&s.lastConnID, 1),
+	}
+
+	conns := atomic.AddInt64(&s.connsCount, 1)
+
+	if s.Cfg.Global.Verbose {
+		log.Printf("Opened connection %d (total=%d) [%s %s]", cl.ConnID, conns, r.Method, r.URL)
+	}
+
+	cl.Conns = conns
+	return cl
+}
+
+func (s *Server) closeConnTrack(cl ConnTrack) {
+	conns := atomic.AddInt64(&s.connsCount, -1)
+
+	if s.Cfg.Global.Verbose {
+		log.Printf("Closed connection %d (total=%d)", cl.ConnID, conns)
+	}
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JSONResponse) {
@@ -121,6 +155,9 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 }
 
 func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	t, _ := template.New("help").Parse(`<!DOCTYPE html>
 <html>
@@ -165,14 +202,28 @@ func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
 	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
 	s.errorResponse(w, http.StatusNotFound, "404 page not found")
 }
 
 func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
+	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
+		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
+		return
+	}
+
 	vars := mux.Vars(r)
 
 	startTime := time.Now().UnixNano()
@@ -201,13 +252,13 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := s.Client.GetMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
 	}
 
 	parts, err := meta.Partitions(kafka.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -233,6 +284,14 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
+	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
+		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
+		return
+	}
+
 	vars := mux.Vars(r)
 
 	startTime := time.Now().UnixNano()
@@ -265,13 +324,13 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	meta, err := s.Client.GetMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
 	}
 
 	parts, err := meta.Partitions(o.Query.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -348,24 +407,32 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
+	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
+		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
+		return
+	}
+
 	res := []ResponseTopicListInfo{}
 
 	meta, err := s.Client.GetMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
 	}
 
 	topics, err := meta.Topics()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get topics: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topics: %v", err)
 		return
 	}
 
 	for _, topic := range topics {
 		parts, err := meta.Partitions(topic)
 		if err != nil {
-			s.errorResponse(w, http.StatusBadRequest, "Unable to get partitions: %v", err)
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
 			return
 		}
 		info := &ResponseTopicListInfo{
@@ -379,8 +446,15 @@ func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
 
+	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
+		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
+		return
+	}
+
+	vars := mux.Vars(r)
 	res := &ResponsePartitionInfo{
 		Topic:     vars["topic"],
 		Partition: toInt32(vars["partition"]),
@@ -388,7 +462,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 
 	meta, err := s.Client.GetMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
 	}
 
@@ -433,13 +507,21 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
+	cl := s.newConnTrack(r)
+	defer s.closeConnTrack(cl)
+
+	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
+		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
+		return
+	}
+
 	vars := mux.Vars(r)
 
 	res := []ResponsePartitionInfo{}
 
 	meta, err := s.Client.GetMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to get metadata: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
 	}
 
@@ -514,6 +596,7 @@ func (s *Server) InitStatistics() {
 	s.Stats.HTTPStatus[416] = hmetrics2.NewCounter()
 	s.Stats.HTTPStatus[500] = hmetrics2.NewCounter()
 	s.Stats.HTTPStatus[502] = hmetrics2.NewCounter()
+	s.Stats.HTTPStatus[503] = hmetrics2.NewCounter()
 
 	for code := range s.Stats.HTTPStatus {
 		hmetrics2.MustRegisterPackageMetric(fmt.Sprintf("Http.Status.%d", code), s.Stats.HTTPStatus[code])
