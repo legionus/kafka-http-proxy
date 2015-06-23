@@ -594,7 +594,13 @@ func (s *Server) fetchMetadata() (*KafkaMetadata, error) {
 	now := time.Now().UnixNano()
 
 	if s.Cfg.Metadata.CacheTimeout.Duration > 0 {
-		if (now - s.Cache.lastUpdateMetadata) < int64(s.Cfg.Metadata.CacheTimeout.Duration) {
+		period := now - s.Cache.lastUpdateMetadata
+
+		if period < 0 {
+			period = -period
+		}
+
+		if period < int64(s.Cfg.Metadata.CacheTimeout.Duration) {
 			return s.Cache.lastMetadata, nil
 		}
 	}
