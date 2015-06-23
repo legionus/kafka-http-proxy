@@ -1,3 +1,12 @@
+kafka-http-proxy (0.4.1) unstable; urgency=low
+
+  * Stop using github.com/Shopify/sarama.
+  * Add connection pool.
+  * Add metadata cache.
+  * Improve logging.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 23 Jun 2015 19:17:48 +0300
+
 kafka-http-proxy (0.3.7) unstable; urgency=low
 
   * Use config to setup checks.
