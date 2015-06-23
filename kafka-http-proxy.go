@@ -27,6 +27,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -85,6 +86,13 @@ type Server struct {
 
 	lastConnID int64
 	connsCount int64
+
+	Cache struct {
+		sync.RWMutex
+
+		lastMetadata       *KafkaMetadata
+		lastUpdateMetadata int64
+	}
 
 	Stats struct {
 		ResponsePostTime *hmetrics2.Histogram
@@ -250,7 +258,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.Client.GetMetadata()
+	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
@@ -322,7 +330,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 
 	length := toInt64(varsLength)
 
-	meta, err := s.Client.GetMetadata()
+	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
@@ -417,7 +425,7 @@ func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := []ResponseTopicListInfo{}
 
-	meta, err := s.Client.GetMetadata()
+	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
@@ -460,7 +468,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 		Partition: toInt32(vars["partition"]),
 	}
 
-	meta, err := s.Client.GetMetadata()
+	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
@@ -519,7 +527,7 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := []ResponsePartitionInfo{}
 
-	meta, err := s.Client.GetMetadata()
+	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
 		return
@@ -577,6 +585,29 @@ func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.successResponse(w, res)
+}
+
+func (s *Server) fetchMetadata() (*KafkaMetadata, error) {
+	s.Cache.Lock()
+	defer s.Cache.Unlock()
+
+	now := time.Now().UnixNano()
+
+	if s.Cfg.Metadata.CacheTimeout.Duration > 0 {
+		if (now - s.Cache.lastUpdateMetadata) < int64(s.Cfg.Metadata.CacheTimeout.Duration) {
+			return s.Cache.lastMetadata, nil
+		}
+	}
+
+	meta, err := s.Client.GetMetadata()
+	if err != nil {
+		return nil, err
+	}
+
+	s.Cache.lastUpdateMetadata = now
+	s.Cache.lastMetadata = meta
+
+	return meta, nil
 }
 
 func (s *Server) InitStatistics() {

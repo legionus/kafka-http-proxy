@@ -33,6 +33,9 @@ type Config struct {
 	Kafka struct {
 		Broker []string
 	}
+	Metadata struct {
+		CacheTimeout CfgDuration
+	}
 	Broker struct {
 		NumConns         int64
 		DialTimeout      CfgDuration
@@ -63,6 +66,8 @@ func (c *Config) SetDefaults() {
 	c.Global.MaxConns = 1000000
 	c.Global.Logfile = "/var/log/kafka-http-proxy.log"
 	c.Global.Pidfile = "/run/kafka-http-proxy.pid"
+
+	c.Metadata.CacheTimeout.Duration = 3 * time.Second
 
 	c.Broker.NumConns = 100
 	c.Broker.DialTimeout.Duration = 500 * time.Millisecond
