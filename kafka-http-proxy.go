@@ -252,6 +252,11 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if int32(len(msg)) > s.Cfg.Consumer.MaxFetchSize {
+		s.errorResponse(w, http.StatusBadRequest, "Message too large")
+		return
+	}
+
 	var m json.RawMessage
 	if err = json.Unmarshal(msg, &m); err != nil {
 		s.errorResponse(w, http.StatusBadRequest, "Message must be JSON")
