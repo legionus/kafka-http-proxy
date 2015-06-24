@@ -131,7 +131,7 @@ func (s *Server) closeConnTrack(cl ConnTrack) {
 func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JSONResponse) {
 	w.Header().Set("Content-Type", "application/json")
 
-	b, err := json.MarshalIndent(v, "", "    ")
+	b, err := json.Marshal(v)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "Unable to marshal result: %v", err)
