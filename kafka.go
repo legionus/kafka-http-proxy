@@ -110,6 +110,7 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 		client:   k,
 		broker:   broker,
 		consumer: consumer,
+		opened:   true,
 	}, nil
 }
 
@@ -277,10 +278,14 @@ type KafkaConsumer struct {
 	client   *KafkaClient
 	broker   *kafka.Broker
 	consumer kafka.Consumer
+	opened   bool
 }
 
 func (c *KafkaConsumer) Close() error {
-	c.client.Brokers <- c.broker
+	if c.opened {
+		c.client.Brokers <- c.broker
+		c.opened = false
+	}
 	return nil
 }
 

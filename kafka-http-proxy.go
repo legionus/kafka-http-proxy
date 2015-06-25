@@ -87,6 +87,8 @@ type Server struct {
 	lastConnID int64
 	connsCount int64
 
+	MessageSize TopicMessageSize
+
 	Cache struct {
 		sync.RWMutex
 
@@ -293,6 +295,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.MessageSize.Put(kafka.Topic, int32(len(msg)))
 	s.successResponse(w, kafka)
 }
 
@@ -333,7 +336,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		Messages: []json.RawMessage{},
 	}
 
-	length := toInt64(varsLength)
+	length := toInt32(varsLength)
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
@@ -385,35 +388,70 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	consumer, err := s.Client.NewConsumer(s.Cfg, o.Query.Topic, o.Query.Partition, o.Query.Offset)
-	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
-		return
-	}
-	defer consumer.Close()
+	cfg := s.Cfg
+	offset := o.Query.Offset
+	msgSize := s.MessageSize.Get(o.Query.Topic, s.Cfg.Consumer.DefaultFetchSize)
+	incSize := false
 
+ConsumeLoop:
 	for {
-		msg, err := consumer.Message()
+		cfg.Consumer.MaxFetchSize = msgSize * length
+
+		consumer, err := s.Client.NewConsumer(cfg, o.Query.Topic, o.Query.Partition, offset)
 		if err != nil {
-			if err == KafkaErrNoData {
-				break
+			s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
+			return
+		}
+		defer consumer.Close()
+
+		for {
+			msg, err := consumer.Message()
+			if err != nil {
+				if err == KafkaErrNoData {
+					incSize = true
+					break
+				}
+				s.errorResponse(w, http.StatusInternalServerError, "Unable to get message: %v", err)
+				consumer.Close()
+				return
 			}
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get message: %v", err)
-			return
+
+			var m json.RawMessage
+
+			if err := json.Unmarshal(msg.Value, &m); err != nil {
+				s.errorResponse(w, http.StatusInternalServerError, "Bad JSON: %v", err)
+				consumer.Close()
+				return
+			}
+			o.Messages = append(o.Messages, m)
+
+			offset = msg.Offset
+			length--
+
+			if msg.Offset >= offsetTo || length == 0 {
+				consumer.Close()
+				break ConsumeLoop
+			}
 		}
 
-		var m json.RawMessage
+		if incSize {
+			if msgSize >= s.Cfg.Consumer.MaxFetchSize {
+				consumer.Close()
+				break ConsumeLoop
+			}
 
-		if err := json.Unmarshal(msg.Value, &m); err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Bad JSON: %v", err)
-			return
-		}
-		o.Messages = append(o.Messages, m)
-		length--
+			msgSize += s.Cfg.Consumer.DefaultFetchSize
 
-		if msg.Offset >= offsetTo || length == 0 {
-			break
+			if msgSize > s.Cfg.Consumer.MaxFetchSize {
+				msgSize = s.Cfg.Consumer.MaxFetchSize
+			}
+
+			incSize = false
 		}
+	}
+
+	if len(o.Messages) > 0 {
+		s.MessageSize.Put(o.Query.Topic, msgSize)
 	}
 
 	s.successResponse(w, o)
@@ -652,6 +690,10 @@ func (s *Server) InitStatistics() {
 		UsedDescriptors int
 	}
 
+	expvar.Publish("KafkaMessageSize", expvar.Func(func() interface{} {
+		return s.MessageSize.Topics
+	}))
+
 	expvar.Publish("runtime", expvar.Func(func() interface{} {
 		data := &RuntimeStat{
 			Goroutines:      runtime.NumGoroutine(),
@@ -843,6 +885,7 @@ func main() {
 		}
 	}()
 
+	server.MessageSize = NewTopicMessageSize()
 	server.InitStatistics()
 
 	log.Fatal(server.Run())

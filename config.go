@@ -48,13 +48,14 @@ type Config struct {
 		RetryWait      CfgDuration
 	}
 	Consumer struct {
-		RequestTimeout CfgDuration
-		RetryLimit     int
-		RetryWait      CfgDuration
-		RetryErrLimit  int
-		RetryErrWait   CfgDuration
-		MinFetchSize   int32
-		MaxFetchSize   int32
+		RequestTimeout   CfgDuration
+		RetryLimit       int
+		RetryWait        CfgDuration
+		RetryErrLimit    int
+		RetryErrWait     CfgDuration
+		MinFetchSize     int32
+		MaxFetchSize     int32
+		DefaultFetchSize int32
 	}
 
 	Logfile io.Writer
@@ -84,5 +85,6 @@ func (c *Config) SetDefaults() {
 	c.Consumer.RetryErrLimit = 2
 	c.Consumer.RetryErrWait.Duration = 50 * time.Millisecond
 	c.Consumer.MinFetchSize = 1
-	c.Consumer.MaxFetchSize = 2000000
+	c.Consumer.MaxFetchSize = 4194304
+	c.Consumer.DefaultFetchSize = 524288
 }
