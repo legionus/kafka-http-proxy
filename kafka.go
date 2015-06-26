@@ -24,8 +24,8 @@ var (
 )
 
 type KafkaClient struct {
-	numBrokers int64
-	Brokers    chan *kafka.Broker
+	allBrokers  map[int64]*kafka.Broker
+	freeBrokers chan int64
 }
 
 func NewClient(settings Config) (*KafkaClient, error) {
@@ -41,49 +41,49 @@ func NewClient(settings Config) (*KafkaClient, error) {
 	}
 
 	client := &KafkaClient{
-		numBrokers: 0,
-		Brokers:    make(chan *kafka.Broker, settings.Broker.NumConns),
+		allBrokers:  make(map[int64]*kafka.Broker),
+		freeBrokers: make(chan int64, settings.Broker.NumConns),
 	}
 
-	for client.numBrokers < settings.Broker.NumConns {
+	brokerID := int64(0)
+
+	for brokerID < settings.Broker.NumConns {
 		b, err := kafka.Dial(settings.Kafka.Broker, conf)
 		if err != nil {
-			client.Close()
+			_ = client.Close()
 			return nil, err
 		}
 
-		client.Brokers <- b
-		client.numBrokers++
+		client.allBrokers[brokerID] = b
+		client.freeBrokers <- brokerID
+		brokerID++
 	}
 
 	return client, nil
 }
 
 func (k *KafkaClient) Close() error {
-	i := int64(0)
-	for i < k.numBrokers {
-		broker := <-k.Brokers
+	for _, broker := range k.allBrokers {
 		broker.Close()
-		i++
 	}
 	return nil
 }
 
-func (k *KafkaClient) Broker() (*kafka.Broker, error) {
+func (k *KafkaClient) Broker() (int64, error) {
 	select {
-	case broker, ok := <-k.Brokers:
+	case brokerID, ok := <-k.freeBrokers:
 		if ok {
-			return broker, nil
+			return brokerID, nil
 		}
 	default:
 	}
-	return nil, fmt.Errorf("no brokers available")
+	return 0, fmt.Errorf("no brokers available")
 }
 
 func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
 	var err error
 
-	broker, err := k.Broker()
+	brokerID, err := k.Broker()
 	if err != nil {
 		return nil, err
 	}
@@ -100,22 +100,22 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 	conf.MaxFetchSize = settings.Consumer.MaxFetchSize
 	conf.StartOffset = offset
 
-	consumer, err := broker.Consumer(conf)
+	consumer, err := k.allBrokers[brokerID].Consumer(conf)
 	if err != nil {
-		k.Brokers <- broker
+		k.freeBrokers <- brokerID
 		return nil, err
 	}
 
 	return &KafkaConsumer{
 		client:   k,
-		broker:   broker,
+		brokerID: brokerID,
 		consumer: consumer,
 		opened:   true,
 	}, nil
 }
 
 func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
-	broker, err := k.Broker()
+	brokerID, err := k.Broker()
 	if err != nil {
 		return nil, err
 	}
@@ -130,15 +130,15 @@ func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 
 	return &KafkaProducer{
 		client:   k,
-		broker:   broker,
-		producer: broker.Producer(conf),
+		brokerID: brokerID,
+		producer: k.allBrokers[brokerID].Producer(conf),
 	}, nil
 }
 
 func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
 	var err error
 
-	broker, err := k.Broker()
+	brokerID, err := k.Broker()
 	if err != nil {
 		return nil, err
 	}
@@ -146,9 +146,9 @@ func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
 	meta := &KafkaMetadata{
 		client: k,
 	}
-	meta.Metadata, err = broker.Metadata()
+	meta.Metadata, err = k.allBrokers[brokerID].Metadata()
 
-	k.Brokers <- broker
+	k.freeBrokers <- brokerID
 
 	if err != nil {
 		return nil, err
@@ -257,33 +257,33 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 }
 
 func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int) (offset int64, err error) {
-	broker, err := m.client.Broker()
+	brokerID, err := m.client.Broker()
 	if err != nil {
 		return 0, err
 	}
 	defer func() {
-		m.client.Brokers <- broker
+		m.client.freeBrokers <- brokerID
 	}()
 
 	switch oType {
 	case KafkaOffsetNewest:
-		offset, err = broker.OffsetLatest(topic, partitionID)
+		offset, err = m.client.allBrokers[brokerID].OffsetLatest(topic, partitionID)
 	case KafkaOffsetOldest:
-		offset, err = broker.OffsetEarliest(topic, partitionID)
+		offset, err = m.client.allBrokers[brokerID].OffsetEarliest(topic, partitionID)
 	}
 	return
 }
 
 type KafkaConsumer struct {
 	client   *KafkaClient
-	broker   *kafka.Broker
+	brokerID int64
 	consumer kafka.Consumer
 	opened   bool
 }
 
 func (c *KafkaConsumer) Close() error {
 	if c.opened {
-		c.client.Brokers <- c.broker
+		c.client.freeBrokers <- c.brokerID
 		c.opened = false
 	}
 	return nil
@@ -295,12 +295,12 @@ func (c *KafkaConsumer) Message() (*proto.Message, error) {
 
 type KafkaProducer struct {
 	client   *KafkaClient
-	broker   *kafka.Broker
+	brokerID int64
 	producer kafka.Producer
 }
 
 func (p *KafkaProducer) Close() error {
-	p.client.Brokers <- p.broker
+	p.client.freeBrokers <- p.brokerID
 	return nil
 }
 
