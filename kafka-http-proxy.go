@@ -14,6 +14,7 @@ import (
 	"github.com/orofarne/hmetrics2"
 	"github.com/orofarne/hmetrics2/expvarexport"
 
+	_ "net/http/pprof"
 	"encoding/json"
 	"expvar"
 	"flag"
@@ -746,6 +747,9 @@ func (s *Server) Run() error {
 		Methods("GET")
 
 	r.Handle("/debug/vars", http.DefaultServeMux)
+
+	r.Handle("/debug/pprof/", http.DefaultServeMux)
+	r.Handle("/debug/pprof/{x}", http.DefaultServeMux)
 
 	httpServer := &http.Server{
 		Addr:    s.Cfg.Global.Address,
