@@ -11,5 +11,7 @@ script
 
     [ ! -s /etc/default/khp ] || . /etc/default/khp
 
+    ulimit -n 655350
+
     exec "$BIN_DIR/kafka-http-proxy" -config="$SYSCONF_DIR/khp.cfg"
 end script
