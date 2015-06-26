@@ -88,7 +88,7 @@ type Server struct {
 	lastConnID int64
 	connsCount int64
 
-	MessageSize TopicMessageSize
+	MessageSize *TopicMessageSize
 
 	Cache struct {
 		sync.RWMutex

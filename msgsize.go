@@ -16,8 +16,8 @@ type TopicMessageSize struct {
 	Topics map[string]int32
 }
 
-func NewTopicMessageSize() TopicMessageSize {
-	return TopicMessageSize{
+func NewTopicMessageSize() *TopicMessageSize {
+	return &TopicMessageSize{
 		Topics: make(map[string]int32, 0),
 	}
 }
