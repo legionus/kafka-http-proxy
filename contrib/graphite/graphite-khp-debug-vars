@@ -39,18 +39,22 @@ if (!$res->is_success) {
 
 my $json = decode_json($res->content);
 
-while (my ($k,$v) = each %{$json->{Kafka}}) {
-	$v = 0 if !$v;
-	print "$metric_prefix";
-	print "Kafka.$k $v";
-	print " $metric_time" if $metric_time;
-	print "\n";
+sub walk {
+	my ($prefix, $hash) = @_;
+	while (my ($k,$v) = each %{$hash}) {
+		$v = 0 if !$v;
+
+		if (ref($v) eq 'HASH') {
+			walk("$prefix.$k", $v);
+			next;
+		}
+
+		print "$metric_prefix";
+		print "$prefix.$k $v";
+		print " $metric_time" if $metric_time;
+		print "\n";
+	}
 }
 
-while (my ($k,$v) = each %{$json->{runtime}}) {
-	$v = 0 if !$v;
-	print "$metric_prefix";
-	print "runtime.$k $v";
-	print " $metric_time" if $metric_time;
-	print "\n";
-}
+walk("Kafka", $json->{Kafka});
+walk("runtime", $json->{runtime});
