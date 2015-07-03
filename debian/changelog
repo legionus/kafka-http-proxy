@@ -1,3 +1,10 @@
+kafka-http-proxy (0.4.2) unstable; urgency=low
+
+  * Rewrite statistic collection.
+  * Rewrite calculation of kafka message.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Fri, 03 Jul 2015 19:05:43 +0300
+
 kafka-http-proxy (0.4.1) unstable; urgency=low
 
   * Stop using github.com/Shopify/sarama.
