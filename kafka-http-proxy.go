@@ -9,12 +9,12 @@ package main
 
 import (
 	"code.google.com/p/gcfg"
+
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/orofarne/hmetrics2"
-	"github.com/orofarne/hmetrics2/expvarexport"
 
 	_ "net/http/pprof"
+
 	"encoding/json"
 	"expvar"
 	"flag"
@@ -88,6 +88,7 @@ type Server struct {
 	lastConnID int64
 	connsCount int64
 
+	Stats       *MetricStats
 	MessageSize *TopicMessageSize
 
 	Cache struct {
@@ -95,12 +96,6 @@ type Server struct {
 
 		lastMetadata       *KafkaMetadata
 		lastUpdateMetadata int64
-	}
-
-	Stats struct {
-		ResponsePostTime *hmetrics2.Histogram
-		ResponseGetTime  *hmetrics2.Histogram
-		HTTPStatus       map[int]*hmetrics2.Counter
 	}
 }
 
@@ -150,7 +145,7 @@ func (s *Server) successResponse(w http.ResponseWriter, m interface{}) {
 		Data:   m,
 	}
 	s.writeResponse(w, http.StatusOK, resp)
-	s.Stats.HTTPStatus[http.StatusOK].Inc()
+	s.Stats.HTTPStatus[http.StatusOK].Inc(1)
 }
 
 func (s *Server) errorResponse(w http.ResponseWriter, status int, format string, args ...interface{}) {
@@ -162,7 +157,7 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 		log.Printf("Error [%d]: %s\n", status, resp.Data)
 	}
 	s.writeResponse(w, status, resp)
-	s.Stats.HTTPStatus[status].Inc()
+	s.Stats.HTTPStatus[status].Inc(1)
 }
 
 func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
@@ -234,14 +229,9 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
 		return
 	}
+	defer s.Stats.ResponsePostTime.Start().Stop()
 
 	vars := mux.Vars(r)
-
-	startTime := time.Now().UnixNano()
-	defer func() {
-		endTime := time.Now().UnixNano()
-		s.Stats.ResponsePostTime.AddPoint(float64(endTime - startTime))
-	}()
 
 	kafka := &KafkaParameters{
 		Topic:     vars["topic"],
@@ -308,14 +298,9 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
 		return
 	}
+	defer s.Stats.ResponseGetTime.Start().Stop()
 
 	vars := mux.Vars(r)
-
-	startTime := time.Now().UnixNano()
-	defer func() {
-		endTime := time.Now().UnixNano()
-		s.Stats.ResponseGetTime.AddPoint(float64(endTime - startTime))
-	}()
 
 	var (
 		varsLength string
@@ -661,63 +646,34 @@ func (s *Server) fetchMetadata() (*KafkaMetadata, error) {
 }
 
 func (s *Server) InitStatistics() {
-	hmetrics2.SetPeriod(10 * time.Second)
-	hmetrics2.AddHook(expvarexport.Exporter("Kafka"))
+	expvar.Publish("Kafka", expvar.Func(func() interface{} {
+		result := make(map[string]interface{})
 
-	s.Stats.ResponsePostTime = hmetrics2.NewHistogram()
-	s.Stats.ResponseGetTime = hmetrics2.NewHistogram()
+		msgSize := make(map[string]float64)
+		for k, v := range s.MessageSize.Topics {
+			msgSize[k] = v.Percentile(0.75)
+		}
 
-	hmetrics2.MustRegisterPackageMetric("Response.POST.Time", s.Stats.ResponsePostTime)
-	hmetrics2.MustRegisterPackageMetric("Response.GET.Time", s.Stats.ResponseGetTime)
+		result["MessageSize"] = msgSize
 
-	s.Stats.HTTPStatus = make(map[int]*hmetrics2.Counter)
-	s.Stats.HTTPStatus[200] = hmetrics2.NewCounter()
-	s.Stats.HTTPStatus[400] = hmetrics2.NewCounter()
-	s.Stats.HTTPStatus[404] = hmetrics2.NewCounter()
-	s.Stats.HTTPStatus[416] = hmetrics2.NewCounter()
-	s.Stats.HTTPStatus[500] = hmetrics2.NewCounter()
-	s.Stats.HTTPStatus[502] = hmetrics2.NewCounter()
-	s.Stats.HTTPStatus[503] = hmetrics2.NewCounter()
+		timeStats := make(map[string]*StatTimer)
+		timeStats["GET"] = GetTimerStat(s.Stats.ResponseGetTime)
+		timeStats["POST"] = GetTimerStat(s.Stats.ResponsePostTime)
 
-	for code := range s.Stats.HTTPStatus {
-		hmetrics2.MustRegisterPackageMetric(fmt.Sprintf("Http.Status.%d", code), s.Stats.HTTPStatus[code])
-	}
+		result["Response"] = timeStats
 
-	type RuntimeStat struct {
-		Goroutines      int
-		CgoCall         int64
-		CPU             int
-		GoMaxProcs      int
-		UsedDescriptors int
-	}
+		httpStatus := make(map[string]int64)
+		for code, metric := range s.Stats.HTTPStatus {
+			httpStatus[fmt.Sprintf("%d", code)] = metric.Count()
+		}
 
-	expvar.Publish("KafkaMessageSize", expvar.Func(func() interface{} {
-		return s.MessageSize.Topics
+		result["HTTPStatus"] = httpStatus
+
+		return result
 	}))
 
 	expvar.Publish("runtime", expvar.Func(func() interface{} {
-		data := &RuntimeStat{
-			Goroutines:      runtime.NumGoroutine(),
-			CgoCall:         runtime.NumCgoCall(),
-			CPU:             runtime.NumCPU(),
-			GoMaxProcs:      runtime.GOMAXPROCS(0),
-			UsedDescriptors: 0,
-		}
-
-		var nofileLimit syscall.Rlimit
-		err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &nofileLimit)
-		if err != nil {
-			return data
-		}
-
-		for i := 0; i < int(nofileLimit.Cur); i++ {
-			_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(i), syscall.F_GETFD, 0)
-			if errno == 0 {
-				data.UsedDescriptors++
-			}
-		}
-
-		return data
+		return GetRuntimeStat()
 	}))
 }
 
@@ -889,6 +845,7 @@ func main() {
 		}
 	}()
 
+	server.Stats = NewMetricStats()
 	server.MessageSize = NewTopicMessageSize()
 	server.InitStatistics()
 
