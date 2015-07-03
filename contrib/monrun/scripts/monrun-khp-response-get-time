@@ -41,9 +41,9 @@ ans(2, "Bad json")
 	if $@;
 
 ans(2, "Metric not found")
-	if !$json->{Kafka}->{"main.Response.GET.Time.avg"};
+	if !$json->{Kafka}->{Response}->{GET}->{Avg};
 
-my $resp_get_time_avg = int($json->{Kafka}->{"main.Response.GET.Time.avg"} / 1000000);
+my $resp_get_time_avg = int($json->{Kafka}->{Response}->{GET}->{Avg} / 1000000);
 
 ans(2, "GET response to slow, $resp_get_time_avg ms")
 	if $resp_get_time_avg > 10000;

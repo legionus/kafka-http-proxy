@@ -22,7 +22,7 @@ sub read_config {
 my $config = read_config();
 my $url    = "http://localhost:" . $config->{khp}->{port};
 
-my @bad_codes = qw(500 502);
+my @bad_codes = qw(500 502 503);
 
 sub ans {
 	my ($code, $msg) = @_;
@@ -43,8 +43,8 @@ ans(2, "Bad json")
 	if $@;
 
 foreach my $code (@bad_codes) {
-	ans(2, "Status $code == " . $json->{Kafka}->{"main.Http.Status.$code.count"})
-		if $json->{Kafka}->{"main.Http.Status.$code.count"} > 0;
+	ans(2, "Status $code == " . $json->{Kafka}->{HTTPStatus}->{$code})
+		if $json->{Kafka}->{HTTPStatus}->{$code} > 0;
 }
 
 ans(0, "OK");
