@@ -10,6 +10,7 @@ package main
 import (
 	"github.com/facebookgo/metrics"
 
+	"time"
 	"runtime"
 	"syscall"
 )
@@ -21,11 +22,21 @@ type MetricStats struct {
 }
 
 func NewMetricStats() *MetricStats {
-	return &MetricStats{
+	m := &MetricStats{
 		ResponsePostTime: metrics.NewTimer(),
 		ResponseGetTime:  metrics.NewTimer(),
 		HTTPStatus:       NewHTTPStatus([]int{200, 400, 404, 416, 500, 502, 503}),
 	}
+
+	go func() {
+		for {
+			m.ResponseGetTime.Tick()
+			m.ResponsePostTime.Tick()
+			time.Sleep(time.Second)
+		}
+	}()
+
+	return m
 }
 
 type StatTimer struct {
