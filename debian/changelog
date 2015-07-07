@@ -1,3 +1,10 @@
+kafka-http-proxy (0.4.3) unstable; urgency=low
+
+  * Add goroutine to update the moving average.
+  * Add comments.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Mon, 06 Jul 2015 17:31:54 +0300
+
 kafka-http-proxy (0.4.2) unstable; urgency=low
 
   * Rewrite statistic collection.
