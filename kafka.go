@@ -23,11 +23,13 @@ var (
 	KafkaErrNoData              = kafka.ErrNoData
 )
 
+// KafkaClient is batch of brokers
 type KafkaClient struct {
 	allBrokers  map[int64]*kafka.Broker
 	freeBrokers chan int64
 }
 
+// NewClient creates new KafkaClient
 func NewClient(settings Config) (*KafkaClient, error) {
 	conf := kafka.NewBrokerConf("kafka-http-proxy")
 
@@ -62,6 +64,7 @@ func NewClient(settings Config) (*KafkaClient, error) {
 	return client, nil
 }
 
+// Close closes all brokers.
 func (k *KafkaClient) Close() error {
 	for _, broker := range k.allBrokers {
 		broker.Close()
@@ -69,6 +72,7 @@ func (k *KafkaClient) Close() error {
 	return nil
 }
 
+// Broker returns first availiable broker or error.
 func (k *KafkaClient) Broker() (int64, error) {
 	select {
 	case brokerID, ok := <-k.freeBrokers:
@@ -162,7 +166,7 @@ type KafkaMetadata struct {
 }
 
 func (m *KafkaMetadata) Topics() ([]string, error) {
-	topics := make([]string, 0)
+	var topics []string
 
 	for _, topic := range m.Metadata.Topics {
 		if topic.Err != nil && topic.Err != proto.ErrLeaderNotAvailable {
@@ -183,7 +187,7 @@ const (
 )
 
 func (m *KafkaMetadata) getPartitions(topic string, pType partitionType) ([]int32, error) {
-	partitions := make([]int32, 0)
+	var partitions []int32
 
 	for _, t := range m.Metadata.Topics {
 		if t.Err != nil {
@@ -252,7 +256,7 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 		}
 	}
 
-	isr := make([]int32, 0)
+	var isr []int32
 	return isr, nil
 }
 

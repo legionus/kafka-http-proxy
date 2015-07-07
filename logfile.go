@@ -13,6 +13,7 @@ import (
 	"sync"
 )
 
+// Logfile represents an active logging object.
 type Logfile struct {
 	sync.RWMutex
 
@@ -22,6 +23,7 @@ type Logfile struct {
 	Name string
 }
 
+// OpenLogfile opens new logfile
 func OpenLogfile(name string) (*Logfile, error) {
 	logfile := &Logfile{
 		Name: name,
@@ -63,6 +65,7 @@ func (f *Logfile) openLog() error {
 	return nil
 }
 
+// Close closes logfile
 func (f *Logfile) Close() error {
 	f.Lock()
 	defer f.Unlock()
@@ -70,6 +73,7 @@ func (f *Logfile) Close() error {
 	return f.closeLog()
 }
 
+// Reopen closes the log file and opens it again.
 func (f *Logfile) Reopen() error {
 	f.Lock()
 	defer f.Unlock()
@@ -87,6 +91,7 @@ func (f *Logfile) Reopen() error {
 	return nil
 }
 
+// Write writes len(p) bytes from p to the underlying data stream.
 func (f *Logfile) Write(p []byte) (int, error) {
 	f.Lock()
 	defer f.Unlock()

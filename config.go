@@ -12,15 +12,18 @@ import (
 	"time"
 )
 
+// CfgDuration is a Duration wrapper for Config.
 type CfgDuration struct {
 	time.Duration
 }
 
+// UnmarshalText is a wrapper.
 func (d *CfgDuration) UnmarshalText(data []byte) (err error) {
 	d.Duration, err = time.ParseDuration(string(data))
 	return
 }
 
+// Config is a main config structure
 type Config struct {
 	Global struct {
 		Address    string
@@ -61,6 +64,7 @@ type Config struct {
 	Logfile io.Writer
 }
 
+// SetDefaults applies default values to config structure.
 func (c *Config) SetDefaults() {
 	c.Global.Verbose = false
 	c.Global.GoMaxProcs = 0

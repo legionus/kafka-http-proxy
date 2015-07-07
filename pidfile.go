@@ -14,11 +14,13 @@ import (
 	"syscall"
 )
 
+// Pidfile is a pidfile object.
 type Pidfile struct {
 	*os.File
 	opened bool
 }
 
+// OpenPidfile opens a new pidfile.
 func OpenPidfile(filepath string) (*Pidfile, error) {
 	fd, err := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -33,6 +35,7 @@ func OpenPidfile(filepath string) (*Pidfile, error) {
 	return &Pidfile{File: fd, opened: true}, nil
 }
 
+// Close closes pidfile.
 func (p *Pidfile) Close() error {
 	if !p.opened {
 		return nil
@@ -50,6 +53,7 @@ func (p *Pidfile) Close() error {
 	return nil
 }
 
+// Read reads a process id from the pidfile.
 func (p *Pidfile) Read() (int, error) {
 	if _, err := p.File.Seek(0, 0); err != nil {
 		return 0, err
@@ -74,6 +78,7 @@ func (p *Pidfile) Read() (int, error) {
 	return pid, nil
 }
 
+// Check checks whether there is a process and matches it with the current process.
 func (p *Pidfile) Check() error {
 	pid, err := p.Read()
 	if err != nil {
@@ -94,6 +99,7 @@ func (p *Pidfile) Check() error {
 	return fmt.Errorf("process is already running")
 }
 
+// Write writes the current process id to the pidfile.
 func (p *Pidfile) Write() error {
 	if _, err := p.File.Seek(0, 0); err != nil {
 		return err
@@ -114,6 +120,7 @@ func (p *Pidfile) Write() error {
 	return nil
 }
 
+// Remove deletes the pidfile.
 func (p *Pidfile) Remove() error {
 	if err := os.Remove(p.File.Name()); err != nil {
 		return err

@@ -41,22 +41,26 @@ var (
 	verbose = flag.Bool("verbose", false, "Turn on logging")
 )
 
+// JSONResponse is a template for all the proxy answers.
 type JSONResponse struct {
 	Status string      `json:"status"`
 	Data   interface{} `json:"data"`
 }
 
+// KafkaParameters contains information about placement in Kafka. Used in GET/POST response.
 type KafkaParameters struct {
 	Topic     string `json:"topic"`
 	Partition int32  `json:"partition"`
 	Offset    int64  `json:"offset"`
 }
 
+// ResponseMessages is a templete for GET response.
 type ResponseMessages struct {
 	Query    KafkaParameters   `json:"query"`
 	Messages []json.RawMessage `json:"messages"`
 }
 
+// ResponsePartitionInfo contains information about Kafka partition.
 type ResponsePartitionInfo struct {
 	Topic        string  `json:"topic"`
 	Partition    int32   `json:"partition"`
@@ -68,16 +72,20 @@ type ResponsePartitionInfo struct {
 	Replicas     []int32 `json:"replicas"`
 }
 
+
+// ResponseTopicListInfo contains information about Kafka topic.
 type ResponseTopicListInfo struct {
 	Topic      string `json:"topic"`
 	Partitions int    `json:"partitions"`
 }
 
+// ConnTrack used to track the number of connections.
 type ConnTrack struct {
 	ConnID int64
 	Conns  int64
 }
 
+// Server is a main structure.
 type Server struct {
 	Cfg Config
 
@@ -99,6 +107,7 @@ type Server struct {
 	}
 }
 
+// Close closes the server.
 func (s *Server) Close() error {
 	return nil
 }
@@ -160,7 +169,7 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 	s.Stats.HTTPStatus[status].Inc(1)
 }
 
-func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) rootHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
@@ -207,21 +216,21 @@ func (s *Server) RootHandler(w http.ResponseWriter, r *http.Request) {
 	t.Execute(w, nil)
 }
 
-func (s *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) pingHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Server) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
 	s.errorResponse(w, http.StatusNotFound, "404 page not found")
 }
 
-func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
@@ -290,7 +299,7 @@ func (s *Server) SendHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, kafka)
 }
 
-func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
@@ -443,7 +452,7 @@ ConsumeLoop:
 	s.successResponse(w, o)
 }
 
-func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) getTopicListHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
@@ -482,7 +491,7 @@ func (s *Server) GetTopicListHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, res)
 }
 
-func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) getPartitionInfoHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
@@ -543,7 +552,7 @@ func (s *Server) GetPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 	s.successResponse(w, res)
 }
 
-func (s *Server) GetTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) getTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 	cl := s.newConnTrack(r)
 	defer s.closeConnTrack(cl)
 
@@ -645,7 +654,7 @@ func (s *Server) fetchMetadata() (*KafkaMetadata, error) {
 	return meta, nil
 }
 
-func (s *Server) InitStatistics() {
+func (s *Server) initStatistics() {
 	expvar.Publish("Kafka", expvar.Func(func() interface{} {
 		result := make(map[string]interface{})
 
@@ -677,29 +686,32 @@ func (s *Server) InitStatistics() {
 	}))
 }
 
+// Run prepare handlers and starts the server.
 func (s *Server) Run() error {
-	r := mux.NewRouter()
-	r.NotFoundHandler = http.HandlerFunc(s.NotFoundHandler)
+	s.initStatistics()
 
-	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.SendHandler).
+	r := mux.NewRouter()
+	r.NotFoundHandler = http.HandlerFunc(s.notFoundHandler)
+
+	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.sendHandler).
 		Methods("POST")
 
-	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.GetHandler).
+	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.getHandler).
 		Methods("GET")
 
-	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.GetPartitionInfoHandler).
+	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.getPartitionInfoHandler).
 		Methods("GET")
 
-	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}", s.GetTopicInfoHandler).
+	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}", s.getTopicInfoHandler).
 		Methods("GET")
 
-	r.HandleFunc("/v1/info/topics", s.GetTopicListHandler).
+	r.HandleFunc("/v1/info/topics", s.getTopicListHandler).
 		Methods("GET")
 
-	r.HandleFunc("/", s.RootHandler).
+	r.HandleFunc("/", s.rootHandler).
 		Methods("GET")
 
-	r.HandleFunc("/ping", s.PingHandler).
+	r.HandleFunc("/ping", s.pingHandler).
 		Methods("GET")
 
 	r.Handle("/debug/vars", http.DefaultServeMux)
@@ -847,7 +859,6 @@ func main() {
 
 	server.Stats = NewMetricStats()
 	server.MessageSize = NewTopicMessageSize()
-	server.InitStatistics()
 
 	log.Fatal(server.Run())
 }
