@@ -35,10 +35,11 @@ import (
 )
 
 var (
-	addr    = flag.String("addr", "", "The address to bind to")
-	brokers = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
-	config  = flag.String("config", "", "Path to configuration file")
-	verbose = flag.Bool("verbose", false, "Turn on logging")
+	addr         = flag.String("addr", "", "The address to bind to")
+	brokers      = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
+	config       = flag.String("config", "", "Path to configuration file")
+	check_config = flag.String("check-config", "", "Test configuration and exit")
+	verbose      = flag.Bool("verbose", false, "Turn on logging")
 )
 
 // JSONResponse is a template for all the proxy answers.
@@ -71,7 +72,6 @@ type ResponsePartitionInfo struct {
 	ReplicasNum  int     `json:"replicasnum"`
 	Replicas     []int32 `json:"replicas"`
 }
-
 
 // ResponseTopicListInfo contains information about Kafka topic.
 type ResponseTopicListInfo struct {
@@ -765,6 +765,26 @@ func main() {
 	log.SetPrefix("[server] ")
 
 	flag.Parse()
+
+	if *check_config != "" {
+		server := &Server{}
+
+		if err := gcfg.ReadFileInto(&server.Cfg, *check_config); err != nil {
+			fmt.Println(err.Error())
+		}
+
+		if server.Cfg.Global.Address == "" {
+			fmt.Println("Address required")
+			os.Exit(1)
+		}
+
+		if len(server.Cfg.Kafka.Broker) == 0 {
+			fmt.Println("Kafka brokers required")
+			os.Exit(1)
+		}
+
+		os.Exit(0)
+	}
 
 	server := &Server{}
 	defer func() {
