@@ -269,11 +269,17 @@ func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int
 		m.client.freeBrokers <- brokerID
 	}()
 
-	switch oType {
-	case KafkaOffsetNewest:
-		offset, err = m.client.allBrokers[brokerID].OffsetLatest(topic, partitionID)
-	case KafkaOffsetOldest:
-		offset, err = m.client.allBrokers[brokerID].OffsetEarliest(topic, partitionID)
+	for retry := 0; retry < 2; retry++ {
+		switch oType {
+		case KafkaOffsetNewest:
+			offset, err = m.client.allBrokers[brokerID].OffsetLatest(topic, partitionID)
+		case KafkaOffsetOldest:
+			offset, err = m.client.allBrokers[brokerID].OffsetEarliest(topic, partitionID)
+		}
+		if _, ok := err.(*proto.KafkaError); !ok {
+			continue
+		}
+		return
 	}
 	return
 }
