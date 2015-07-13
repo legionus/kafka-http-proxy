@@ -23,6 +23,30 @@ var (
 	KafkaErrNoData              = kafka.ErrNoData
 )
 
+type kafkaLogger struct {
+	verbose bool
+	log *log.Logger
+}
+
+func (l *kafkaLogger) Debug(args ...interface{}) {
+	if !l.verbose {
+		return
+	}
+	l.log.Println("[DEBUG]", args)
+}
+
+func (l *kafkaLogger) Info(args ...interface{}) {
+	l.log.Println("[INFO]", args)
+}
+
+func (l *kafkaLogger) Warn(args ...interface{}) {
+	l.log.Println("[WARNING]", args)
+}
+
+func (l *kafkaLogger) Error(args ...interface{}) {
+	l.log.Println("[ERROR]", args)
+}
+
 // KafkaClient is batch of brokers
 type KafkaClient struct {
 	allBrokers  map[int64]*kafka.Broker
@@ -33,7 +57,11 @@ type KafkaClient struct {
 func NewClient(settings Config) (*KafkaClient, error) {
 	conf := kafka.NewBrokerConf("kafka-http-proxy")
 
-	conf.Log = log.New(settings.Logfile, "[kafka/broker] ", log.LstdFlags)
+	conf.Logger = &kafkaLogger {
+		verbose: settings.Global.Verbose,
+		log: log.New(settings.Logfile, "[kafka/broker] ", log.LstdFlags),
+	}
+
 	conf.DialTimeout = settings.Broker.DialTimeout.Duration
 	conf.LeaderRetryLimit = settings.Broker.LeaderRetryLimit
 	conf.LeaderRetryWait = settings.Broker.LeaderRetryWait.Duration
@@ -94,7 +122,11 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 
 	conf := kafka.NewConsumerConf(topic, partitionID)
 
-	conf.Log = log.New(settings.Logfile, "[kafka/consumer] ", log.LstdFlags)
+	conf.Logger = &kafkaLogger {
+		verbose: settings.Global.Verbose,
+		log: log.New(settings.Logfile, "[kafka/consumer] ", log.LstdFlags),
+	}
+
 	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
 	conf.RetryLimit = settings.Consumer.RetryLimit
 	conf.RetryWait = settings.Consumer.RetryWait.Duration
@@ -126,7 +158,11 @@ func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 
 	conf := kafka.NewProducerConf()
 
-	conf.Log = log.New(settings.Logfile, "[kafka/producer] ", log.LstdFlags)
+	conf.Logger = &kafkaLogger {
+		verbose: settings.Global.Verbose,
+		log: log.New(settings.Logfile, "[kafka/producer] ", log.LstdFlags),
+	}
+
 	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration
 	conf.RetryLimit = settings.Producer.RetryLimit
 	conf.RetryWait = settings.Producer.RetryWait.Duration
