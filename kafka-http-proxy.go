@@ -35,11 +35,11 @@ import (
 )
 
 var (
-	addr         = flag.String("addr", "", "The address to bind to")
-	brokers      = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
-	config       = flag.String("config", "", "Path to configuration file")
-	check_config = flag.String("check-config", "", "Test configuration and exit")
-	verbose      = flag.Bool("verbose", false, "Turn on logging")
+	addr        = flag.String("addr", "", "The address to bind to")
+	brokers     = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
+	config      = flag.String("config", "", "Path to configuration file")
+	checkConfig = flag.String("check-config", "", "Test configuration and exit")
+	verbose     = flag.Bool("verbose", false, "Turn on logging")
 )
 
 // JSONResponse is a template for all the proxy answers.
@@ -805,10 +805,10 @@ func main() {
 
 	flag.Parse()
 
-	if *check_config != "" {
+	if *checkConfig != "" {
 		server := &Server{}
 
-		if err := gcfg.ReadFileInto(&server.Cfg, *check_config); err != nil {
+		if err := gcfg.ReadFileInto(&server.Cfg, *checkConfig); err != nil {
 			fmt.Println(err.Error())
 		}
 
