@@ -1,3 +1,12 @@
+kafka-http-proxy (0.4.4) unstable; urgency=low
+
+  * Store more information in error response.
+  * Add Logger for github.com/optiopay/kafka.
+  * Add additional attempt to obtain the offset.
+  * Add option to validate config file.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Mon, 13 Jul 2015 20:45:53 +0300
+
 kafka-http-proxy (0.4.3) unstable; urgency=low
 
   * Add goroutine to update the moving average.
