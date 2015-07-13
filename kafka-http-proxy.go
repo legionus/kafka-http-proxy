@@ -44,19 +44,28 @@ var (
 
 // JSONResponse is a template for all the proxy answers.
 type JSONResponse struct {
-	Status string      `json:"status"`
-	Data   interface{} `json:"data"`
+	// Response type. It can be either "success" or "error".
+	Status string `json:"status"`
+
+	// The response data. It depends on the type of response.
+	Data interface{} `json:"data"`
 }
 
 // JSONErrorData is a template for error answers.
 type JSONErrorData struct {
-	Code    int    `json:"code"`
+	// HTTP status code.
+	Code int `json:"code"`
+
+	// Human readable error message.
 	Message string `json:"message"`
 }
 
 // JSONErrorOutOfRange contains a template for response if the requested offset out of range.
 type JSONErrorOutOfRange struct {
-	Code    int    `json:"code"`
+	// HTTP status code.
+	Code int `json:"code"`
+
+	// Human readable error message.
 	Message string `json:"message"`
 
 	Topic        string `json:"topic"`

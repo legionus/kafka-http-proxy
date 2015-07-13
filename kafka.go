@@ -16,16 +16,22 @@ import (
 )
 
 var (
+	// KafkaOffsetNewest is a wrapper over kafka.StartOffsetNewest
 	KafkaOffsetNewest = kafka.StartOffsetNewest
+
+	// KafkaOffsetOldest is a wrapper over kafka.StartOffsetOldest
 	KafkaOffsetOldest = kafka.StartOffsetOldest
 
+	// KafkaErrReplicaNotAvailable is a wrapper over proto.ErrReplicaNotAvailable
 	KafkaErrReplicaNotAvailable = proto.ErrReplicaNotAvailable
-	KafkaErrNoData              = kafka.ErrNoData
+
+	// KafkaErrNoData is a wrapper over kafka.ErrNoData
+	KafkaErrNoData = kafka.ErrNoData
 )
 
 type kafkaLogger struct {
 	verbose bool
-	log *log.Logger
+	log     *log.Logger
 }
 
 func (l *kafkaLogger) Debug(args ...interface{}) {
@@ -57,9 +63,9 @@ type KafkaClient struct {
 func NewClient(settings Config) (*KafkaClient, error) {
 	conf := kafka.NewBrokerConf("kafka-http-proxy")
 
-	conf.Logger = &kafkaLogger {
+	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		log: log.New(settings.Logfile, "[kafka/broker] ", log.LstdFlags),
+		log:     log.New(settings.Logfile, "[kafka/broker] ", log.LstdFlags),
 	}
 
 	conf.DialTimeout = settings.Broker.DialTimeout.Duration
@@ -112,6 +118,7 @@ func (k *KafkaClient) Broker() (int64, error) {
 	return 0, fmt.Errorf("no brokers available")
 }
 
+// NewConsumer creates a new Consumer.
 func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
 	var err error
 
@@ -122,9 +129,9 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 
 	conf := kafka.NewConsumerConf(topic, partitionID)
 
-	conf.Logger = &kafkaLogger {
+	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		log: log.New(settings.Logfile, "[kafka/consumer] ", log.LstdFlags),
+		log:     log.New(settings.Logfile, "[kafka/consumer] ", log.LstdFlags),
 	}
 
 	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
@@ -150,6 +157,7 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 	}, nil
 }
 
+// NewProducer creates a new Producer.
 func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 	brokerID, err := k.Broker()
 	if err != nil {
@@ -158,9 +166,9 @@ func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 
 	conf := kafka.NewProducerConf()
 
-	conf.Logger = &kafkaLogger {
+	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		log: log.New(settings.Logfile, "[kafka/producer] ", log.LstdFlags),
+		log:     log.New(settings.Logfile, "[kafka/producer] ", log.LstdFlags),
 	}
 
 	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration
