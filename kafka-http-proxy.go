@@ -48,6 +48,23 @@ type JSONResponse struct {
 	Data   interface{} `json:"data"`
 }
 
+// JSONErrorData is a template for error answers.
+type JSONErrorData struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// JSONErrorOutOfRange contains a template for response if the requested offset out of range.
+type JSONErrorOutOfRange struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+
+	Topic        string `json:"topic"`
+	Partition    int32  `json:"partition"`
+	OffsetOldest int64  `json:"offsetfrom"`
+	OffsetNewest int64  `json:"offsetto"`
+}
+
 // KafkaParameters contains information about placement in Kafka. Used in GET/POST response.
 type KafkaParameters struct {
 	Topic     string `json:"topic"`
@@ -160,10 +177,33 @@ func (s *Server) successResponse(w http.ResponseWriter, m interface{}) {
 func (s *Server) errorResponse(w http.ResponseWriter, status int, format string, args ...interface{}) {
 	resp := &JSONResponse{
 		Status: "error",
-		Data:   fmt.Sprintf(format, args...),
+		Data: &JSONErrorData{
+			Code:    status,
+			Message: fmt.Sprintf(format, args...),
+		},
 	}
 	if s.Cfg.Global.Verbose {
-		log.Printf("Error [%d]: %s\n", status, resp.Data)
+		log.Printf("Error [%d]: %+v\n", status, resp.Data)
+	}
+	s.writeResponse(w, status, resp)
+	s.Stats.HTTPStatus[status].Inc(1)
+}
+
+func (s *Server) errorOutOfRange(w http.ResponseWriter, topic string, partition int32, offsetFrom int64, offsetTo int64) {
+	status := http.StatusRequestedRangeNotSatisfiable
+	resp := &JSONResponse{
+		Status: "error",
+		Data: &JSONErrorOutOfRange{
+			Code:         status,
+			Message:      fmt.Sprintf("Offset out of range (%v, %v)", offsetFrom, offsetTo),
+			Topic:        topic,
+			Partition:    partition,
+			OffsetOldest: offsetFrom,
+			OffsetNewest: offsetTo,
+		},
+	}
+	if s.Cfg.Global.Verbose {
+		log.Printf("Error [%d]: %+v\n", status, resp.Data)
 	}
 	s.writeResponse(w, status, resp)
 	s.Stats.HTTPStatus[status].Inc(1)
@@ -378,8 +418,7 @@ func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if o.Query.Offset < offsetFrom || o.Query.Offset > offsetTo {
-		s.errorResponse(w, http.StatusRequestedRangeNotSatisfiable,
-			"Offset out of range (%v, %v)", offsetFrom, offsetTo)
+		s.errorOutOfRange(w, o.Query.Topic, o.Query.Partition, offsetFrom, offsetTo)
 		return
 	}
 
