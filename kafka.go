@@ -11,8 +11,9 @@ import (
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
 
+	log "github.com/Sirupsen/logrus"
+
 	"fmt"
-	"log"
 )
 
 var (
@@ -30,27 +31,57 @@ var (
 )
 
 type kafkaLogger struct {
+	subsys  string
 	verbose bool
 	log     *log.Logger
 }
 
-func (l *kafkaLogger) Debug(args ...interface{}) {
+func (l *kafkaLogger) Debug(msg string, args ...interface{}) {
 	if !l.verbose {
 		return
 	}
-	l.log.Println("[DEBUG]", args)
+
+	e := log.NewEntry(l.log)
+
+	for i := 0; i < len(args); i += 2 {
+		k := fmt.Sprintf("%+v", args[i])
+		e = e.WithField(k, args[i+1])
+	}
+
+	e.Debugf("[%s] %s", l.subsys, msg)
 }
 
-func (l *kafkaLogger) Info(args ...interface{}) {
-	l.log.Println("[INFO]", args)
+func (l *kafkaLogger) Info(msg string, args ...interface{}) {
+	e := log.NewEntry(l.log)
+
+	for i := 0; i < len(args); i += 2 {
+		k := fmt.Sprintf("%+v", args[i])
+		e = e.WithField(k, args[i+1])
+	}
+
+	e.Infof("[%s] %s", l.subsys, msg)
 }
 
-func (l *kafkaLogger) Warn(args ...interface{}) {
-	l.log.Println("[WARNING]", args)
+func (l *kafkaLogger) Warn(msg string, args ...interface{}) {
+	e := log.NewEntry(l.log)
+
+	for i := 0; i < len(args); i += 2 {
+		k := fmt.Sprintf("%+v", args[i])
+		e = e.WithField(k, args[i+1])
+	}
+
+	e.Warningf("[%s] %s", l.subsys, msg)
 }
 
-func (l *kafkaLogger) Error(args ...interface{}) {
-	l.log.Println("[ERROR]", args)
+func (l *kafkaLogger) Error(msg string, args ...interface{}) {
+	e := log.NewEntry(l.log)
+
+	for i := 0; i < len(args); i += 2 {
+		k := fmt.Sprintf("%+v", args[i])
+		e = e.WithField(k, args[i+1])
+	}
+
+	e.Errorf("[%s] %s", l.subsys, msg)
 }
 
 // KafkaClient is batch of brokers
@@ -65,7 +96,12 @@ func NewClient(settings Config) (*KafkaClient, error) {
 
 	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		log:     log.New(settings.Logfile, "[kafka/broker] ", log.LstdFlags),
+		subsys:  "kafka/broker",
+		log:     &log.Logger{
+			Out: settings.Logfile,
+			Formatter: new(log.TextFormatter),
+			Level: log.DebugLevel,
+		},
 	}
 
 	conf.DialTimeout = settings.Broker.DialTimeout.Duration
@@ -131,7 +167,12 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 
 	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		log:     log.New(settings.Logfile, "[kafka/consumer] ", log.LstdFlags),
+		subsys:  "kafka/consumer",
+		log:     &log.Logger{
+			Out: settings.Logfile,
+			Formatter: new(log.TextFormatter),
+			Level: log.DebugLevel,
+		},
 	}
 
 	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
@@ -168,7 +209,12 @@ func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 
 	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		log:     log.New(settings.Logfile, "[kafka/producer] ", log.LstdFlags),
+		subsys: "kafka/producer",
+		log:     &log.Logger{
+			Out: settings.Logfile,
+			Formatter: new(log.TextFormatter),
+			Level: log.DebugLevel,
+		},
 	}
 
 	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration

@@ -13,6 +13,8 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
+	log "github.com/Sirupsen/logrus"
+
 	_ "net/http/pprof"
 
 	"encoding/json"
@@ -21,7 +23,6 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -810,8 +811,6 @@ func toInt64(s string) int64 {
 }
 
 func main() {
-	log.SetPrefix("[server] ")
-
 	flag.Parse()
 
 	if *checkConfig != "" {
@@ -837,7 +836,7 @@ func main() {
 	server := &Server{}
 	defer func() {
 		if err := server.Close(); err != nil {
-			log.Println("Failed to close server", err)
+			log.Errorln("Failed to close server", err)
 		}
 	}()
 	server.Cfg.SetDefaults()
@@ -866,24 +865,20 @@ func main() {
 	server.Pidfile, err = OpenPidfile(server.Cfg.Global.Pidfile)
 	if err != nil {
 		log.Fatal("Unable to open pidfile: ", err.Error())
-		return
 	}
 	defer server.Pidfile.Close()
 
 	if err = server.Pidfile.Check(); err != nil {
 		log.Fatal("Check failed: ", err.Error())
-		os.Exit(1)
 	}
 
 	if err = server.Pidfile.Write(); err != nil {
 		log.Fatal("Unable to write pidfile: ", err.Error())
-		os.Exit(1)
 	}
 
 	server.Logfile, err = OpenLogfile(server.Cfg.Global.Logfile)
 	if err != nil {
 		log.Fatal("Unable to open log: ", err.Error())
-		return
 	}
 	defer server.Logfile.Close()
 
@@ -891,13 +886,11 @@ func main() {
 	log.SetOutput(server.Logfile)
 
 	if server.Cfg.Global.Address == "" {
-		log.Println("Address required")
-		os.Exit(1)
+		log.Fatal("Address required")
 	}
 
 	if len(server.Cfg.Kafka.Broker) == 0 {
-		log.Println("Kafka brokers required")
-		os.Exit(1)
+		log.Fatal("Kafka brokers required")
 	}
 
 	if server.Cfg.Global.GoMaxProcs == 0 {
@@ -910,7 +903,6 @@ func main() {
 	server.Client, err = NewClient(server.Cfg)
 	if err != nil {
 		log.Fatal("Unable to make client: ", err.Error())
-		os.Exit(1)
 	}
 	defer server.Client.Close()
 
