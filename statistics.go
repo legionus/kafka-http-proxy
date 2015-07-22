@@ -25,7 +25,7 @@ func NewMetricStats() *MetricStats {
 	m := &MetricStats{
 		ResponsePostTime: metrics.NewTimer(),
 		ResponseGetTime:  metrics.NewTimer(),
-		HTTPStatus:       NewHTTPStatus([]int{200, 400, 404, 416, 500, 502, 503}),
+		HTTPStatus:       NewHTTPStatus([]int{200, 400, 404, 405, 416, 500, 502, 503}),
 	}
 
 	go func() {

@@ -10,22 +10,19 @@ package main
 import (
 	"code.google.com/p/gcfg"
 
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
-
 	log "github.com/Sirupsen/logrus"
-
 	_ "net/http/pprof"
 
 	"encoding/json"
 	"expvar"
 	"flag"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -42,6 +39,21 @@ var (
 	checkConfig = flag.String("check-config", "", "Test configuration and exit")
 	verbose     = flag.Bool("verbose", false, "Turn on logging")
 )
+
+type HTTPResponse struct {
+	http.ResponseWriter
+
+	HTTPStatus     int
+	ResponseLength int64
+}
+
+func (resp *HTTPResponse) Write(b []byte) (n int, err error) {
+	n, err = resp.ResponseWriter.Write(b)
+	if err == nil {
+		resp.ResponseLength += int64(len(b))
+	}
+	return
+}
 
 // JSONResponse is a template for all the proxy answers.
 type JSONResponse struct {
@@ -147,7 +159,7 @@ func (s *Server) newConnTrack(r *http.Request) ConnTrack {
 	conns := atomic.AddInt64(&s.connsCount, 1)
 
 	if s.Cfg.Global.Verbose {
-		log.Printf("Opened connection %d (total=%d) [%s %s]", cl.ConnID, conns, r.Method, r.URL)
+		log.Debugf("Opened connection %d (total=%d) [%s %s]", cl.ConnID, conns, r.Method, r.URL)
 	}
 
 	cl.Conns = conns
@@ -158,33 +170,40 @@ func (s *Server) closeConnTrack(cl ConnTrack) {
 	conns := atomic.AddInt64(&s.connsCount, -1)
 
 	if s.Cfg.Global.Verbose {
-		log.Printf("Closed connection %d (total=%d)", cl.ConnID, conns)
+		log.Debugf("Closed connection %d (total=%d)", cl.ConnID, conns)
 	}
 }
 
-func (s *Server) writeResponse(w http.ResponseWriter, status int, v *JSONResponse) {
+func (s *Server) rawResponse(resp *HTTPResponse, status int, b []byte) {
+	resp.HTTPStatus = status
+
+	resp.WriteHeader(status)
+	resp.Write(b)
+}
+
+func (s *Server) writeResponse(w *HTTPResponse, status int, v *JSONResponse) {
 	w.Header().Set("Content-Type", "application/json")
 
 	b, err := json.Marshal(v)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Unable to marshal result: %v", err)
+		log.Errorln("Unable to marshal result:", err)
+		return
 	}
 
-	w.WriteHeader(status)
-	w.Write(b)
+	s.rawResponse(w, status, b)
+	s.Stats.HTTPStatus[status].Inc(1)
 }
 
-func (s *Server) successResponse(w http.ResponseWriter, m interface{}) {
+func (s *Server) successResponse(w *HTTPResponse, m interface{}) {
 	resp := &JSONResponse{
 		Status: "success",
 		Data:   m,
 	}
 	s.writeResponse(w, http.StatusOK, resp)
-	s.Stats.HTTPStatus[http.StatusOK].Inc(1)
 }
 
-func (s *Server) errorResponse(w http.ResponseWriter, status int, format string, args ...interface{}) {
+func (s *Server) errorResponse(w *HTTPResponse, status int, format string, args ...interface{}) {
 	resp := &JSONResponse{
 		Status: "error",
 		Data: &JSONErrorData{
@@ -193,13 +212,12 @@ func (s *Server) errorResponse(w http.ResponseWriter, status int, format string,
 		},
 	}
 	if s.Cfg.Global.Verbose {
-		log.Printf("Error [%d]: %+v\n", status, resp.Data)
+		log.Errorf("%+v", resp.Data)
 	}
 	s.writeResponse(w, status, resp)
-	s.Stats.HTTPStatus[status].Inc(1)
 }
 
-func (s *Server) errorOutOfRange(w http.ResponseWriter, topic string, partition int32, offsetFrom int64, offsetTo int64) {
+func (s *Server) errorOutOfRange(w *HTTPResponse, topic string, partition int32, offsetFrom int64, offsetTo int64) {
 	status := http.StatusRequestedRangeNotSatisfiable
 	resp := &JSONResponse{
 		Status: "error",
@@ -213,18 +231,14 @@ func (s *Server) errorOutOfRange(w http.ResponseWriter, topic string, partition 
 		},
 	}
 	if s.Cfg.Global.Verbose {
-		log.Printf("Error [%d]: %+v\n", status, resp.Data)
+		log.Errorf("%+v", resp.Data)
 	}
 	s.writeResponse(w, status, resp)
-	s.Stats.HTTPStatus[status].Inc(1)
 }
 
-func (s *Server) rootHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
+func (s *Server) rootHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	t, _ := template.New("help").Parse(`<!DOCTYPE html>
+	s.rawResponse(w, http.StatusOK, []byte(`<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -262,39 +276,27 @@ func (s *Server) rootHandler(w http.ResponseWriter, r *http.Request) {
         </table>
     </div>
   </body>
-</html>`)
-	t.Execute(w, nil)
+</html>`))
 }
 
-func (s *Server) pingHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
+func (s *Server) pingHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Server) notFoundHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
+func (s *Server) notFoundHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	s.errorResponse(w, http.StatusNotFound, "404 page not found")
 }
 
-func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
+func (s *Server) notAllowedHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
+	s.errorResponse(w, http.StatusMethodNotAllowed, "405 Method Not Allowed")
+}
 
-	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
-		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
-		return
-	}
+func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	defer s.Stats.ResponsePostTime.Start().Stop()
 
-	vars := mux.Vars(r)
-
 	kafka := &KafkaParameters{
-		Topic:     vars["topic"],
-		Partition: toInt32(vars["partition"]),
+		Topic:     p.Get("topic"),
+		Partition: toInt32(p.Get("partition")),
 		Offset:    -1,
 	}
 
@@ -349,33 +351,24 @@ func (s *Server) sendHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, kafka)
 }
 
-func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
-	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
-		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
-		return
-	}
+func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	defer s.Stats.ResponseGetTime.Start().Stop()
-
-	vars := mux.Vars(r)
 
 	var (
 		varsLength string
 		varsOffset string
 	)
 
-	if varsLength = r.FormValue("limit"); varsLength == "" {
+	if varsLength = p.Get("limit"); varsLength == "" {
 		varsLength = "1"
 	}
 
-	varsOffset = r.FormValue("offset")
+	varsOffset = p.Get("offset")
 
 	o := &ResponseMessages{
 		Query: KafkaParameters{
-			Topic:     vars["topic"],
-			Partition: toInt32(vars["partition"]),
+			Topic:     p.Get("topic"),
+			Partition: toInt32(p.Get("partition")),
 			Offset:    -1,
 		},
 		Messages: []json.RawMessage{},
@@ -501,15 +494,7 @@ ConsumeLoop:
 	s.successResponse(w, o)
 }
 
-func (s *Server) getTopicListHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
-	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
-		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
-		return
-	}
-
+func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	res := []ResponseTopicListInfo{}
 
 	meta, err := s.fetchMetadata()
@@ -540,19 +525,10 @@ func (s *Server) getTopicListHandler(w http.ResponseWriter, r *http.Request) {
 	s.successResponse(w, res)
 }
 
-func (s *Server) getPartitionInfoHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
-	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
-		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
-		return
-	}
-
-	vars := mux.Vars(r)
+func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	res := &ResponsePartitionInfo{
-		Topic:     vars["topic"],
-		Partition: toInt32(vars["partition"]),
+		Topic:     p.Get("topic"),
+		Partition: toInt32(p.Get("partition")),
 	}
 
 	meta, err := s.fetchMetadata()
@@ -601,17 +577,7 @@ func (s *Server) getPartitionInfoHandler(w http.ResponseWriter, r *http.Request)
 	s.successResponse(w, res)
 }
 
-func (s *Server) getTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
-	cl := s.newConnTrack(r)
-	defer s.closeConnTrack(cl)
-
-	if s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
-		s.errorResponse(w, http.StatusServiceUnavailable, "Too many connections")
-		return
-	}
-
-	vars := mux.Vars(r)
-
+func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	res := []ResponsePartitionInfo{}
 
 	meta, err := s.fetchMetadata()
@@ -620,13 +586,13 @@ func (s *Server) getTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writable, err := meta.WritablePartitions(vars["topic"])
+	writable, err := meta.WritablePartitions(p.Get("topic"))
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
 		return
 	}
 
-	parts, err := meta.Partitions(vars["topic"])
+	parts, err := meta.Partitions(p.Get("topic"))
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
 		return
@@ -634,7 +600,7 @@ func (s *Server) getTopicInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	for partition := range parts {
 		r := &ResponsePartitionInfo{
-			Topic:     vars["topic"],
+			Topic:     p.Get("topic"),
 			Partition: int32(partition),
 			Writable:  inSlice(int32(partition), writable),
 		}
@@ -739,43 +705,121 @@ func (s *Server) initStatistics() {
 func (s *Server) Run() error {
 	s.initStatistics()
 
-	r := mux.NewRouter()
-	r.NotFoundHandler = http.HandlerFunc(s.notFoundHandler)
+	type httpHandler struct {
+		LimitConns  bool
+		Regexp      *regexp.Regexp
+		GETHandler  func(*HTTPResponse, *http.Request, *url.Values)
+		POSTHandler func(*HTTPResponse, *http.Request, *url.Values)
+	}
 
-	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.sendHandler).
-		Methods("POST")
+	handlers := []httpHandler{
+		httpHandler{
+			Regexp:      regexp.MustCompile("^/v1/topics/(?P<topic>[A-Za-z0-9_-]+)/(?P<partition>[0-9]+)/?$"),
+			LimitConns:  true,
+			GETHandler:  s.getHandler,
+			POSTHandler: s.sendHandler,
+		},
+		httpHandler{
+			Regexp:      regexp.MustCompile("^/v1/info/topics/(?P<topic>[A-Za-z0-9_-]+)/(?P<partition>[0-9]+)/?$"),
+			LimitConns:  true,
+			GETHandler:  s.getPartitionInfoHandler,
+			POSTHandler: s.notAllowedHandler,
+		},
+		httpHandler{
+			Regexp:      regexp.MustCompile("^/v1/info/topics/(?P<topic>[A-Za-z0-9_-]+)/?$"),
+			LimitConns:  true,
+			GETHandler:  s.getTopicInfoHandler,
+			POSTHandler: s.notAllowedHandler,
+		},
+		httpHandler{
+			Regexp:      regexp.MustCompile("^/v1/info/topics/?$"),
+			LimitConns:  true,
+			GETHandler:  s.getTopicListHandler,
+			POSTHandler: s.notAllowedHandler,
+		},
+		httpHandler{
+			Regexp:      regexp.MustCompile("^/ping$"),
+			LimitConns:  false,
+			GETHandler:  s.pingHandler,
+			POSTHandler: s.notAllowedHandler,
+		},
+		httpHandler{
+			Regexp:      regexp.MustCompile("^/$"),
+			LimitConns:  false,
+			GETHandler:  s.rootHandler,
+			POSTHandler: s.notAllowedHandler,
+		},
+	}
 
-	r.HandleFunc("/v1/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.getHandler).
-		Methods("GET")
+	var httpLog = &log.Logger{
+		Out:       s.Cfg.Logfile,
+		Formatter: new(log.TextFormatter),
+		Level:     log.DebugLevel,
+	}
 
-	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}/{partition:[0-9]+}", s.getPartitionInfoHandler).
-		Methods("GET")
+	mux := http.NewServeMux()
+	mux.Handle("/debug/vars", http.DefaultServeMux)
+	mux.Handle("/debug/pprof/", http.DefaultServeMux)
+	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		reqTime := time.Now()
+		resp := &HTTPResponse{w, http.StatusOK, 0}
 
-	r.HandleFunc("/v1/info/topics/{topic:[A-Za-z0-9_-]+}", s.getTopicInfoHandler).
-		Methods("GET")
+		defer func() {
+			log.NewEntry(httpLog).WithFields(log.Fields{
+				"stop":    time.Now().String(),
+				"start":   reqTime.String(),
+				"method":  req.Method,
+				"addr":    req.RemoteAddr,
+				"reqlen":  req.ContentLength,
+				"resplen": resp.ResponseLength,
+				"status":  resp.HTTPStatus,
+			}).Info(req.URL)
+		}()
 
-	r.HandleFunc("/v1/info/topics", s.getTopicListHandler).
-		Methods("GET")
+		cl := s.newConnTrack(req)
+		defer s.closeConnTrack(cl)
 
-	r.HandleFunc("/", s.rootHandler).
-		Methods("GET")
+		p := req.URL.Query()
 
-	r.HandleFunc("/ping", s.pingHandler).
-		Methods("GET")
+		for _, a := range handlers {
+			match := a.Regexp.FindStringSubmatch(req.URL.Path)
+			if match == nil {
+				continue
+			}
 
-	r.Handle("/debug/vars", http.DefaultServeMux)
+			if a.LimitConns && s.Cfg.Global.MaxConns > 0 && cl.Conns >= s.Cfg.Global.MaxConns {
+				s.errorResponse(resp, http.StatusServiceUnavailable, "Too many connections")
+				return
+			}
 
-	r.Handle("/debug/pprof/", http.DefaultServeMux)
-	r.Handle("/debug/pprof/{x}", http.DefaultServeMux)
+			for i, name := range a.Regexp.SubexpNames() {
+				if i == 0 {
+					continue
+				}
+				p.Set(name, match[i])
+			}
+
+			switch req.Method {
+			case "GET":
+				a.GETHandler(resp, req, &p)
+			case "POST":
+				a.POSTHandler(resp, req, &p)
+			default:
+				s.notAllowedHandler(resp, req, &p)
+			}
+			return
+		}
+
+		s.notFoundHandler(resp, req, &p)
+		return
+	})
 
 	httpServer := &http.Server{
 		Addr:    s.Cfg.Global.Address,
-		Handler: handlers.LoggingHandler(s.Logfile, r),
+		Handler: mux,
 	}
 
-	if s.Cfg.Global.Verbose {
-		log.Println("Server ready")
-	}
+	log.Info("Server ready")
 	return httpServer.ListenAndServe()
 }
 
