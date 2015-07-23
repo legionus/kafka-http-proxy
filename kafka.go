@@ -14,6 +14,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 
 	"fmt"
+	"time"
 )
 
 var (
@@ -86,8 +87,9 @@ func (l *kafkaLogger) Error(msg string, args ...interface{}) {
 
 // KafkaClient is batch of brokers
 type KafkaClient struct {
-	allBrokers  map[int64]*kafka.Broker
-	freeBrokers chan int64
+	allBrokers    map[int64]*kafka.Broker
+	freeBrokers   chan int64
+	stopReconnect chan int
 }
 
 // NewClient creates new KafkaClient
@@ -97,10 +99,10 @@ func NewClient(settings Config) (*KafkaClient, error) {
 	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
 		subsys:  "kafka/broker",
-		log:     &log.Logger{
-			Out: settings.Logfile,
+		log: &log.Logger{
+			Out:       settings.Logfile,
 			Formatter: new(log.TextFormatter),
-			Level: log.DebugLevel,
+			Level:     log.DebugLevel,
 		},
 	}
 
@@ -113,8 +115,9 @@ func NewClient(settings Config) (*KafkaClient, error) {
 	}
 
 	client := &KafkaClient{
-		allBrokers:  make(map[int64]*kafka.Broker),
-		freeBrokers: make(chan int64, settings.Broker.NumConns),
+		allBrokers:    make(map[int64]*kafka.Broker),
+		freeBrokers:   make(chan int64, settings.Broker.NumConns),
+		stopReconnect: make(chan int, 1),
 	}
 
 	brokerID := int64(0)
@@ -131,11 +134,48 @@ func NewClient(settings Config) (*KafkaClient, error) {
 		brokerID++
 	}
 
+	if settings.Broker.ReconnectTimeout.Duration > 0 {
+		go func() {
+			for {
+				select {
+				case _, ok := <-client.stopReconnect:
+					if ok {
+						break
+					}
+				default:
+				}
+
+				time.Sleep(settings.Broker.ReconnectTimeout.Duration)
+
+				brokerID, err := client.Broker()
+				if err != nil {
+					continue
+				}
+
+				client.allBrokers[brokerID].Close()
+
+				var b *kafka.Broker
+				for {
+					b, err = kafka.Dial(settings.Kafka.Broker, conf)
+					if err == nil {
+						break
+					}
+				}
+
+				client.allBrokers[brokerID] = b
+				client.freeBrokers <- brokerID
+
+				conf.Logger.Info("Connection was reset by schedule", "brokerID", brokerID)
+			}
+		}()
+	}
+
 	return client, nil
 }
 
 // Close closes all brokers.
 func (k *KafkaClient) Close() error {
+	k.stopReconnect <- 1
 	for _, broker := range k.allBrokers {
 		broker.Close()
 	}
@@ -168,10 +208,10 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
 		subsys:  "kafka/consumer",
-		log:     &log.Logger{
-			Out: settings.Logfile,
+		log: &log.Logger{
+			Out:       settings.Logfile,
 			Formatter: new(log.TextFormatter),
-			Level: log.DebugLevel,
+			Level:     log.DebugLevel,
 		},
 	}
 
@@ -209,11 +249,11 @@ func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 
 	conf.Logger = &kafkaLogger{
 		verbose: settings.Global.Verbose,
-		subsys: "kafka/producer",
-		log:     &log.Logger{
-			Out: settings.Logfile,
+		subsys:  "kafka/producer",
+		log: &log.Logger{
+			Out:       settings.Logfile,
 			Formatter: new(log.TextFormatter),
-			Level: log.DebugLevel,
+			Level:     log.DebugLevel,
 		},
 	}
 
