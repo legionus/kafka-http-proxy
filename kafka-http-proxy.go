@@ -509,9 +509,12 @@ func main() {
 
 	server.Cfg.Logfile = server.Logfile
 
-	server.Client, err = NewClient(server.Cfg)
-	if err != nil {
-		log.Fatal("Unable to make client: ", err.Error())
+	for {
+		server.Client, err = NewClient(server.Cfg)
+		if err == nil {
+			break
+		}
+		log.Error("Unable to make client: ", err.Error())
 	}
 	defer server.Client.Close()
 
