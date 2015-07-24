@@ -146,6 +146,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 					if err == nil {
 						break
 					}
+					conf.Logger.Error("Unable to reconnect", "brokerID", brokerID, "err", err.Error())
 				}
 
 				client.allBrokers[brokerID] = b
