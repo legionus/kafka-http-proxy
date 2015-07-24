@@ -8,7 +8,6 @@
 package main
 
 import (
-	"io"
 	"time"
 )
 
@@ -61,8 +60,12 @@ type Config struct {
 		MaxFetchSize     int32
 		DefaultFetchSize int32
 	}
-
-	Logfile io.Writer
+	Logging struct {
+		DisableColors    bool
+		DisableTimestamp bool
+		FullTimestamp    bool
+		DisableSorting   bool
+	}
 }
 
 // SetDefaults applies default values to config structure.
@@ -93,4 +96,9 @@ func (c *Config) SetDefaults() {
 	c.Consumer.MinFetchSize = 1
 	c.Consumer.MaxFetchSize = 4194304
 	c.Consumer.DefaultFetchSize = 524288
+
+	c.Logging.DisableColors = true
+	c.Logging.DisableTimestamp = false
+	c.Logging.FullTimestamp = true
+	c.Logging.DisableSorting = true
 }

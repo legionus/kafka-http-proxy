@@ -35,7 +35,7 @@ var (
 	addr        = flag.String("addr", "", "The address to bind to")
 	brokers     = flag.String("brokers", os.Getenv("KAFKA_PEERS"), "The Kafka brokers to connect to, as a comma separated list")
 	config      = flag.String("config", "", "Path to configuration file")
-	checkConfig = flag.String("check-config", "", "Test configuration and exit")
+	checkConfig = flag.Bool("check-config", false, "Test configuration and exit")
 	verbose     = flag.Bool("verbose", false, "Turn on logging")
 )
 
@@ -95,9 +95,7 @@ type ConnTrack struct {
 
 // Server is a main structure.
 type Server struct {
-	Cfg Config
-
-	Logfile *Logfile
+	Cfg     *Config
 	Pidfile *Pidfile
 	Client  *KafkaClient
 
@@ -126,10 +124,7 @@ func (s *Server) newConnTrack(r *http.Request) ConnTrack {
 	}
 
 	conns := atomic.AddInt64(&s.connsCount, 1)
-
-	if s.Cfg.Global.Verbose {
-		log.Debugf("Opened connection %d (total=%d) [%s %s]", cl.ConnID, conns, r.Method, r.URL)
-	}
+	log.Debugf("Opened connection %d (total=%d) [%s %s]", cl.ConnID, conns, r.Method, r.URL)
 
 	cl.Conns = conns
 	return cl
@@ -137,10 +132,7 @@ func (s *Server) newConnTrack(r *http.Request) ConnTrack {
 
 func (s *Server) closeConnTrack(cl ConnTrack) {
 	conns := atomic.AddInt64(&s.connsCount, -1)
-
-	if s.Cfg.Global.Verbose {
-		log.Debugf("Closed connection %d (total=%d)", cl.ConnID, conns)
-	}
+	log.Debugf("Closed connection %d (total=%d)", cl.ConnID, conns)
 }
 
 func (s *Server) rawResponse(resp *HTTPResponse, status int, b []byte) {
@@ -180,9 +172,7 @@ func (s *Server) errorResponse(w *HTTPResponse, status int, format string, args 
 			Message: fmt.Sprintf(format, args...),
 		},
 	}
-	if s.Cfg.Global.Verbose {
-		log.Errorf("%+v", resp.Data)
-	}
+	log.Debugf("%+v", resp.Data)
 	s.writeResponse(w, status, resp)
 }
 
@@ -199,9 +189,7 @@ func (s *Server) errorOutOfRange(w *HTTPResponse, topic string, partition int32,
 			OffsetNewest: offsetTo,
 		},
 	}
-	if s.Cfg.Global.Verbose {
-		log.Errorf("%+v", resp.Data)
-	}
+	log.Debugf("%+v", resp.Data)
 	s.writeResponse(w, status, resp)
 }
 
@@ -316,12 +304,6 @@ func (s *Server) Run() error {
 		},
 	}
 
-	var httpLog = &log.Logger{
-		Out:       s.Cfg.Logfile,
-		Formatter: new(log.TextFormatter),
-		Level:     log.DebugLevel,
-	}
-
 	mux := http.NewServeMux()
 	mux.Handle("/debug/vars", http.DefaultServeMux)
 	mux.Handle("/debug/pprof/", http.DefaultServeMux)
@@ -330,7 +312,7 @@ func (s *Server) Run() error {
 		resp := &HTTPResponse{w, http.StatusOK, 0}
 
 		defer func() {
-			log.NewEntry(httpLog).WithFields(log.Fields{
+			log.NewEntry(log.StandardLogger()).WithFields(log.Fields{
 				"stop":    time.Now().String(),
 				"start":   reqTime.String(),
 				"method":  req.Method,
@@ -422,115 +404,114 @@ func toInt64(s string) int64 {
 func main() {
 	flag.Parse()
 
-	if *checkConfig != "" {
-		server := &Server{}
-
-		if err := gcfg.ReadFileInto(&server.Cfg, *checkConfig); err != nil {
-			fmt.Println(err.Error())
-		}
-
-		if server.Cfg.Global.Address == "" {
-			fmt.Println("Address required")
-			os.Exit(1)
-		}
-
-		if len(server.Cfg.Kafka.Broker) == 0 {
-			fmt.Println("Kafka brokers required")
-			os.Exit(1)
-		}
-
-		os.Exit(0)
-	}
-
-	server := &Server{}
-	defer func() {
-		if err := server.Close(); err != nil {
-			log.Errorln("Failed to close server", err)
-		}
-	}()
-	server.Cfg.SetDefaults()
+	cfg := &Config{}
+	cfg.SetDefaults()
 
 	if *config != "" {
-		err := gcfg.ReadFileInto(&server.Cfg, *config)
+		err := gcfg.ReadFileInto(cfg, *config)
 		if err != nil {
-			log.Fatal("Unable to read config file: ", err.Error())
+			fmt.Println("Bad config:", err.Error())
+			os.Exit(1)
 		}
 	}
 
 	if *verbose {
-		server.Cfg.Global.Verbose = true
-	}
-
-	if *brokers != "" {
-		server.Cfg.Kafka.Broker = strings.Split(*brokers, ",")
+		cfg.Global.Verbose = true
 	}
 
 	if *addr != "" {
-		server.Cfg.Global.Address = *addr
+		cfg.Global.Address = *addr
 	}
 
-	var err error
+	if *brokers != "" {
+		cfg.Kafka.Broker = strings.Split(*brokers, ",")
+	}
 
-	server.Pidfile, err = OpenPidfile(server.Cfg.Global.Pidfile)
+	if cfg.Global.Address == "" {
+		fmt.Println("Address required")
+		os.Exit(1)
+	}
+
+	if len(cfg.Kafka.Broker) == 0 {
+		fmt.Println("Kafka brokers required")
+		os.Exit(1)
+	}
+
+	if *checkConfig {
+		os.Exit(0)
+	}
+
+	log.SetLevel(log.InfoLevel)
+	if cfg.Global.Verbose {
+		log.SetLevel(log.DebugLevel)
+	}
+
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:    cfg.Logging.FullTimestamp,
+		DisableTimestamp: cfg.Logging.DisableTimestamp,
+		DisableColors:    cfg.Logging.DisableColors,
+		DisableSorting:   cfg.Logging.DisableSorting,
+	})
+
+	pidfile, err := OpenPidfile(cfg.Global.Pidfile)
 	if err != nil {
 		log.Fatal("Unable to open pidfile: ", err.Error())
 	}
-	defer server.Pidfile.Close()
+	defer pidfile.Close()
 
-	if err = server.Pidfile.Check(); err != nil {
+	if err := pidfile.Check(); err != nil {
 		log.Fatal("Check failed: ", err.Error())
 	}
 
-	if err = server.Pidfile.Write(); err != nil {
+	if err := pidfile.Write(); err != nil {
 		log.Fatal("Unable to write pidfile: ", err.Error())
 	}
 
-	server.Logfile, err = OpenLogfile(server.Cfg.Global.Logfile)
+	logfile, err := OpenLogfile(cfg.Global.Logfile)
 	if err != nil {
 		log.Fatal("Unable to open log: ", err.Error())
 	}
-	defer server.Logfile.Close()
+	defer logfile.Close()
+	log.SetOutput(logfile)
 
-	// Setup global log
-	log.SetOutput(server.Logfile)
-
-	if server.Cfg.Global.Address == "" {
-		log.Fatal("Address required")
+	if cfg.Global.GoMaxProcs == 0 {
+		cfg.Global.GoMaxProcs = runtime.NumCPU()
 	}
+	runtime.GOMAXPROCS(cfg.Global.GoMaxProcs)
 
-	if len(server.Cfg.Kafka.Broker) == 0 {
-		log.Fatal("Kafka brokers required")
-	}
-
-	if server.Cfg.Global.GoMaxProcs == 0 {
-		server.Cfg.Global.GoMaxProcs = runtime.NumCPU()
-	}
-	runtime.GOMAXPROCS(server.Cfg.Global.GoMaxProcs)
-
-	server.Cfg.Logfile = server.Logfile
-
+	var kafkaClient *KafkaClient
 	for {
-		server.Client, err = NewClient(server.Cfg)
+		kafkaClient, err = NewClient(cfg)
 		if err == nil {
 			break
 		}
 		log.Error("Unable to make client: ", err.Error())
 	}
-	defer server.Client.Close()
+	defer kafkaClient.Close()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGHUP)
 	go func() {
 		for {
 			_ = <-sigChan
-			if err := server.Logfile.Reopen(); err != nil {
+			if err := logfile.Reopen(); err != nil {
 				panic("Unable to reopen logfile")
 			}
 		}
 	}()
 
-	server.Stats = NewMetricStats()
-	server.MessageSize = NewTopicMessageSize()
+	server := &Server{
+		Cfg:         cfg,
+		Pidfile:     pidfile,
+		Client:      kafkaClient,
+		Stats:       NewMetricStats(),
+		MessageSize: NewTopicMessageSize(),
+	}
+	defer func() {
+		if err := server.Close(); err != nil {
+			log.Errorln("Failed to close server", err)
+		}
+	}()
 
 	log.Fatal(server.Run())
 }

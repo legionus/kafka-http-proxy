@@ -32,17 +32,11 @@ var (
 )
 
 type kafkaLogger struct {
-	subsys  string
-	verbose bool
-	log     *log.Logger
+	subsys string
 }
 
 func (l *kafkaLogger) Debug(msg string, args ...interface{}) {
-	if !l.verbose {
-		return
-	}
-
-	e := log.NewEntry(l.log)
+	e := log.NewEntry(log.StandardLogger())
 
 	for i := 0; i < len(args); i += 2 {
 		k := fmt.Sprintf("%+v", args[i])
@@ -53,7 +47,7 @@ func (l *kafkaLogger) Debug(msg string, args ...interface{}) {
 }
 
 func (l *kafkaLogger) Info(msg string, args ...interface{}) {
-	e := log.NewEntry(l.log)
+	e := log.NewEntry(log.StandardLogger())
 
 	for i := 0; i < len(args); i += 2 {
 		k := fmt.Sprintf("%+v", args[i])
@@ -64,7 +58,7 @@ func (l *kafkaLogger) Info(msg string, args ...interface{}) {
 }
 
 func (l *kafkaLogger) Warn(msg string, args ...interface{}) {
-	e := log.NewEntry(l.log)
+	e := log.NewEntry(log.StandardLogger())
 
 	for i := 0; i < len(args); i += 2 {
 		k := fmt.Sprintf("%+v", args[i])
@@ -75,7 +69,7 @@ func (l *kafkaLogger) Warn(msg string, args ...interface{}) {
 }
 
 func (l *kafkaLogger) Error(msg string, args ...interface{}) {
-	e := log.NewEntry(l.log)
+	e := log.NewEntry(log.StandardLogger())
 
 	for i := 0; i < len(args); i += 2 {
 		k := fmt.Sprintf("%+v", args[i])
@@ -93,26 +87,18 @@ type KafkaClient struct {
 }
 
 // NewClient creates new KafkaClient
-func NewClient(settings Config) (*KafkaClient, error) {
+func NewClient(settings *Config) (*KafkaClient, error) {
 	conf := kafka.NewBrokerConf("kafka-http-proxy")
 
 	conf.Logger = &kafkaLogger{
-		verbose: settings.Global.Verbose,
-		subsys:  "kafka/broker",
-		log: &log.Logger{
-			Out:       settings.Logfile,
-			Formatter: new(log.TextFormatter),
-			Level:     log.DebugLevel,
-		},
+		subsys: "kafka/broker",
 	}
 
 	conf.DialTimeout = settings.Broker.DialTimeout.Duration
 	conf.LeaderRetryLimit = settings.Broker.LeaderRetryLimit
 	conf.LeaderRetryWait = settings.Broker.LeaderRetryWait.Duration
 
-	if settings.Global.Verbose {
-		log.Println("Gona create broker pool = ", settings.Broker.NumConns)
-	}
+	log.Debug("Gona create broker pool = ", settings.Broker.NumConns)
 
 	client := &KafkaClient{
 		allBrokers:    make(map[int64]*kafka.Broker),
@@ -195,7 +181,7 @@ func (k *KafkaClient) Broker() (int64, error) {
 }
 
 // NewConsumer creates a new Consumer.
-func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
+func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
 	var err error
 
 	brokerID, err := k.Broker()
@@ -206,13 +192,7 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 	conf := kafka.NewConsumerConf(topic, partitionID)
 
 	conf.Logger = &kafkaLogger{
-		verbose: settings.Global.Verbose,
-		subsys:  "kafka/consumer",
-		log: &log.Logger{
-			Out:       settings.Logfile,
-			Formatter: new(log.TextFormatter),
-			Level:     log.DebugLevel,
-		},
+		subsys: "kafka/consumer",
 	}
 
 	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
@@ -239,7 +219,7 @@ func (k *KafkaClient) NewConsumer(settings Config, topic string, partitionID int
 }
 
 // NewProducer creates a new Producer.
-func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
+func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
 	brokerID, err := k.Broker()
 	if err != nil {
 		return nil, err
@@ -248,13 +228,7 @@ func (k *KafkaClient) NewProducer(settings Config) (*KafkaProducer, error) {
 	conf := kafka.NewProducerConf()
 
 	conf.Logger = &kafkaLogger{
-		verbose: settings.Global.Verbose,
-		subsys:  "kafka/producer",
-		log: &log.Logger{
-			Out:       settings.Logfile,
-			Formatter: new(log.TextFormatter),
-			Level:     log.DebugLevel,
-		},
+		subsys: "kafka/producer",
 	}
 
 	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration
