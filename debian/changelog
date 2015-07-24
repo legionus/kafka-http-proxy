@@ -1,3 +1,13 @@
+kafka-http-proxy (0.4.5) unstable; urgency=low
+
+  * Use github.com/Sirupsen/logrus.
+  * Reconnect after certain time.
+  * Remove github.com/gorilla/*.
+  * Remove html/template.
+  * Rewrite initialization of daemon.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Fri, 24 Jul 2015 15:46:59 +0300
+
 kafka-http-proxy (0.4.4) unstable; urgency=low
 
   * Store more information in error response.
