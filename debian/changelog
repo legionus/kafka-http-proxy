@@ -1,3 +1,9 @@
+kafka-http-proxy (0.4.6) unstable; urgency=low
+
+  * Update monitorings.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 28 Jul 2015 16:49:46 +0300
+
 kafka-http-proxy (0.4.5) unstable; urgency=low
 
   * Use github.com/Sirupsen/logrus.
