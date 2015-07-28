@@ -65,4 +65,7 @@ foreach my $host (@{$dc}) {
 ans(2, "Too many active controllers")
 	if $active > 1;
 
+ans(2, "Active controller not found")
+	if $active < 1;
+
 ans(0, "OK");
