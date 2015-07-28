@@ -20,7 +20,7 @@ sub read_config {
 }
 
 my $config = read_config();
-my $url    = sprintf 'http://%s:%s', $config->{khp}->{host}, $config->{khp}->{port};
+my $url    = sprintf 'http://localhost:%s', $config->{khp}->{port};
 
 sub ans {
 	my ($code, $msg) = @_;
