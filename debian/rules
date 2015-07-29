@@ -15,8 +15,9 @@ GOPATH = $(CURDIR)/Godeps/_workspace
 %:
 	dh $@
 
-#override_dh_auto_clean:
-#	rm -rf -- $(CURDIR)/Godeps
+# without-configs #override_dh_installdeb:
+# without-configs #	dh_installdeb
+# without-configs #	: > $(DEBIAN_DIR)/$(PROJECT)/DEBIAN/conffiles
 
 override_dh_auto_configure:
 	mkdir -p -- $(GOPATH)/src/$(PROJECT_DIR)
@@ -34,18 +35,4 @@ install_conf:
 	install -D -m 644 $(CURDIR)/server.cfg $(DEBIAN_DIR)/$(PROJECT)/$(SYSCONF_DIR)/khp.cfg$(CONFIG_SUFFIX)
 	install -D -m 644 $(CURDIR)/kafka.json $(DEBIAN_DIR)/$(PROJECT)/$(SYSCONF_DIR)/kafka.json$(CONFIG_SUFFIX)
 
-install_monrun:
-	mkdir -p -- $(DEBIAN_DIR)/$(PROJECT)/etc/monrun/conf.d
-	cp -- $(CURDIR)/contrib/monrun/jobs/* $(DEBIAN_DIR)/$(PROJECT)/etc/monrun/conf.d/
-	mkdir -p -- $(DEBIAN_DIR)/$(PROJECT)/usr/share/$(PROJECT)/monrun
-	cp -- $(CURDIR)/contrib/monrun/scripts/* $(DEBIAN_DIR)/$(PROJECT)/usr/share/$(PROJECT)/monrun/
-
-install_graphite:
-	mkdir -p -- $(DEBIAN_DIR)/$(PROJECT)/usr/share/$(PROJECT)/graphite
-	cp -- $(CURDIR)/contrib/graphite/* $(DEBIAN_DIR)/$(PROJECT)/usr/share/$(PROJECT)/graphite/
-
-install_snaked: install_graphite
-	mkdir -p -- $(DEBIAN_DIR)/$(PROJECT)/etc/snaked/jobs
-	cp -r -- $(CURDIR)/contrib/snaked/jobs/* $(DEBIAN_DIR)/$(PROJECT)/etc/snaked/jobs/
-
-override_dh_install: install_bin install_conf install_monrun install_graphite install_snaked
+override_dh_install: install_bin install_conf
