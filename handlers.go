@@ -223,15 +223,7 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	offsetTo--
-
-	if o.Query.Offset == 0 && offsetTo == 0 {
-		// Topic is empty
-		s.successResponse(w, o)
-		return
-	}
-
-	if o.Query.Offset < offsetFrom || o.Query.Offset > offsetTo {
+	if o.Query.Offset < offsetFrom || o.Query.Offset >= offsetTo {
 		s.errorOutOfRange(w, o.Query.Topic, o.Query.Partition, offsetFrom, offsetTo)
 		return
 	}
