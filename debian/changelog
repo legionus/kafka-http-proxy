@@ -1,3 +1,9 @@
+kafka-http-proxy (0.5.3) unstable; urgency=low
+
+  * Fix offset check.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Thu, 30 Jul 2015 14:32:32 +0300
+
 kafka-http-proxy (0.5.1) unstable; urgency=low
 
   * Move monitorings to separate repository.
