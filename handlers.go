@@ -265,7 +265,7 @@ ConsumeLoop:
 			}
 			o.Messages = append(o.Messages, m)
 
-			offset = msg.Offset
+			offset = msg.Offset + 1
 			length--
 
 			if msg.Offset >= offsetTo || length == 0 {
