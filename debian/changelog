@@ -1,3 +1,9 @@
+kafka-http-proxy (0.5.4) unstable; urgency=low
+
+  * Fix offset to avoid dups.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Thu, 30 Jul 2015 19:09:43 +0300
+
 kafka-http-proxy (0.5.3) unstable; urgency=low
 
   * Fix offset check.
