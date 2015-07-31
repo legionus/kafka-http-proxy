@@ -268,7 +268,7 @@ ConsumeLoop:
 			offset = msg.Offset + 1
 			length--
 
-			if msg.Offset >= offsetTo || length == 0 {
+			if offset >= offsetTo || length == 0 {
 				consumer.Close()
 				break ConsumeLoop
 			}
