@@ -44,6 +44,7 @@ type HTTPResponse struct {
 	http.ResponseWriter
 
 	HTTPStatus     int
+	HTTPError      string
 	ResponseLength int64
 }
 
@@ -165,11 +166,13 @@ func (s *Server) successResponse(w *HTTPResponse, m interface{}) {
 }
 
 func (s *Server) errorResponse(w *HTTPResponse, status int, format string, args ...interface{}) {
+	w.HTTPError = fmt.Sprintf(format, args...)
+
 	resp := &JSONResponse{
 		Status: "error",
 		Data: &JSONErrorData{
 			Code:    status,
-			Message: fmt.Sprintf(format, args...),
+			Message: w.HTTPError,
 		},
 	}
 	log.Debugf("%+v", resp.Data)
@@ -309,10 +312,10 @@ func (s *Server) Run() error {
 	mux.Handle("/debug/pprof/", http.DefaultServeMux)
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		reqTime := time.Now()
-		resp := &HTTPResponse{w, http.StatusOK, 0}
+		resp := &HTTPResponse{w, http.StatusOK, "", 0}
 
 		defer func() {
-			log.NewEntry(log.StandardLogger()).WithFields(log.Fields{
+			e := log.NewEntry(log.StandardLogger()).WithFields(log.Fields{
 				"stop":    time.Now().String(),
 				"start":   reqTime.String(),
 				"method":  req.Method,
@@ -320,7 +323,13 @@ func (s *Server) Run() error {
 				"reqlen":  req.ContentLength,
 				"resplen": resp.ResponseLength,
 				"status":  resp.HTTPStatus,
-			}).Info(req.URL)
+			})
+
+			if resp.HTTPStatus >= 500 {
+				e = e.WithField("error", resp.HTTPError)
+			}
+
+			e.Info(req.URL)
 		}()
 
 		cl := s.newConnTrack(req)
