@@ -273,10 +273,10 @@ ConsumeLoop:
 				break ConsumeLoop
 			}
 		}
+		consumer.Close()
 
 		if incSize {
 			if msgSize >= s.Cfg.Consumer.MaxFetchSize {
-				consumer.Close()
 				break ConsumeLoop
 			}
 
