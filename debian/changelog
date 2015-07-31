@@ -1,7 +1,7 @@
-kafka-http-proxy (0.5.5) unstable; urgency=low
+kafka-http-proxy (0.5.6) unstable; urgency=low
 
   * Log server errors.
-  * Fix connection leak.
+  * Fix offset check.
 
  -- Gladkov Alexey <gladkov.alexey@gmail.com>  Fri, 31 Jul 2015 16:02:18 +0300
 
