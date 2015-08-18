@@ -228,7 +228,7 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	cfg := s.Cfg
+	cfg := *s.Cfg
 	offset := o.Query.Offset
 	msgSize := s.MessageSize.Get(o.Query.Topic, s.Cfg.Consumer.DefaultFetchSize)
 	incSize := false
@@ -237,7 +237,7 @@ ConsumeLoop:
 	for {
 		cfg.Consumer.MaxFetchSize = msgSize * length
 
-		consumer, err := s.Client.NewConsumer(cfg, o.Query.Topic, o.Query.Partition, offset)
+		consumer, err := s.Client.NewConsumer(&cfg, o.Query.Topic, o.Query.Partition, offset)
 		if err != nil {
 			s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
 			return
