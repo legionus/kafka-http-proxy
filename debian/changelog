@@ -1,3 +1,9 @@
+kafka-http-proxy (0.5.7) unstable; urgency=low
+
+  * Show more details in error message.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 18 Aug 2015 14:42:25 +0300
+
 kafka-http-proxy (0.5.6) unstable; urgency=low
 
   * Log server errors.
