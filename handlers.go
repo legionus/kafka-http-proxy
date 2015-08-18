@@ -118,7 +118,7 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	}
 
 	if int32(len(msg)) > s.Cfg.Consumer.MaxFetchSize {
-		s.errorResponse(w, http.StatusBadRequest, "Message too large")
+		s.errorResponse(w, http.StatusBadRequest, "Message too large: Body size should be less than %d, but it is %d", s.Cfg.Consumer.MaxFetchSize, int32(len(msg)))
 		return
 	}
 
