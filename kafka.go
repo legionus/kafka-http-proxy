@@ -283,6 +283,19 @@ func (m *KafkaMetadata) Topics() ([]string, error) {
 	return topics, nil
 }
 
+func (m *KafkaMetadata) inTopics(name string) (bool, error) {
+	for _, topic := range m.Metadata.Topics {
+		if topic.Err != nil {
+			return false, topic.Err
+		}
+
+		if name == topic.Name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 type partitionType int
 
 const (

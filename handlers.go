@@ -134,6 +134,17 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
+	found, err := meta.inTopics(kafka.Topic)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topic: %v", err)
+		return
+	}
+
+	if !found {
+		s.errorResponse(w, http.StatusBadRequest, "Topic not found")
+		return
+	}
+
 	parts, err := meta.Partitions(kafka.Topic)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
@@ -190,6 +201,17 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		return
+	}
+
+	found, err := meta.inTopics(o.Query.Topic)
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topic: %v", err)
+		return
+	}
+
+	if !found {
+		s.errorResponse(w, http.StatusBadRequest, "Topic not found")
 		return
 	}
 
@@ -386,6 +408,17 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		return
+	}
+
+	found, err := meta.inTopics(p.Get("topic"))
+	if err != nil {
+		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topic: %v", err)
+		return
+	}
+
+	if !found {
+		s.errorResponse(w, http.StatusBadRequest, "Topic not found")
 		return
 	}
 
