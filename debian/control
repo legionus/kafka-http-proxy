@@ -4,7 +4,7 @@ Priority: extra
 Maintainer: Gladkov Alexey <legion@yandex-team.ru>
 Build-Depends:
  debhelper (>= 8.0.0),
- golang (>= 1.4.2), golang (<< 2)
+ golang (>= 1.4.2)
 Standards-Version: 3.9.3
 Homepage: https://github.com/legionus/kafka-http-proxy
 
