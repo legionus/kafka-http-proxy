@@ -67,7 +67,12 @@ func (s *Server) rootHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
           <tr>
             <th class="text-right">Read from Kafka</th>
             <td>GET</td>
-            <td><code>{schema}://{host}/v1/topics/{topic}/{partition}?offset={offset}&limit={limit}</code></td>
+            <td>
+               <code>{schema}://{host}/v1/topics/{topic}/{partition}?offset={offset}&limit={limit}</code>
+               <p>To obtain data relative to the beginning or end of the queue:</p>
+               <code>{schema}://{host}/v1/topics/{topic}/{partition}?relative={position}&limit={limit}</code>
+               <p>The <code>{position}</code> can be positive or negative.</p>
+            </td>
           </tr>
           <tr>
             <th class="text-right">Obtain topic list</th>
@@ -177,8 +182,9 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	defer s.Stats.ResponseGetTime.Start().Stop()
 
 	var (
-		varsLength string
-		varsOffset string
+		varsLength   string
+		varsOffset   string
+		varsRelative string
 	)
 
 	if varsLength = p.Get("limit"); varsLength == "" {
@@ -186,6 +192,7 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	}
 
 	varsOffset = p.Get("offset")
+	varsRelative = p.Get("relative")
 
 	o := &responseMessages{
 		Query: kafkaParameters{
@@ -232,17 +239,25 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	if varsOffset == "" {
-		// Set default value
-		o.Query.Offset = offsetFrom
-	} else {
-		o.Query.Offset = toInt64(varsOffset)
-	}
-
 	offsetTo, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetNewest)
 	if err != nil {
 		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
 		return
+	}
+
+	if varsRelative != "" {
+		relative := toInt64(varsRelative)
+
+		if relative >= 0 {
+			o.Query.Offset = offsetFrom + relative
+		} else {
+			o.Query.Offset = offsetTo + relative
+		}
+	} else if varsOffset != "" {
+		o.Query.Offset = toInt64(varsOffset)
+	} else {
+		// Set default value
+		o.Query.Offset = offsetFrom
 	}
 
 	if o.Query.Offset < offsetFrom || o.Query.Offset >= offsetTo {
