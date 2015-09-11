@@ -47,6 +47,13 @@ type responseTopicListInfo struct {
 	Partitions int    `json:"partitions"`
 }
 
+func httpStatusError(err error) int {
+	if _, ok := err.(*KhpError); ok {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusInternalServerError
+}
+
 func (s *Server) rootHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	s.rawResponse(w, http.StatusOK, []byte(`<!DOCTYPE html>
@@ -140,13 +147,13 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
 	}
 
 	found, err := meta.inTopics(kafka.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topic: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
 		return
 	}
 
@@ -157,7 +164,7 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	parts, err := meta.Partitions(kafka.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -168,7 +175,7 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	producer, err := s.Client.NewProducer(s.Cfg)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to make producer: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to make producer: %v", err)
 		return
 	}
 	defer producer.Close()
@@ -212,13 +219,13 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
 	}
 
 	found, err := meta.inTopics(o.Query.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topic: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
 		return
 	}
 
@@ -229,7 +236,7 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	parts, err := meta.Partitions(o.Query.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -240,13 +247,13 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	offsetFrom, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetOldest)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
 	}
 
 	offsetTo, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetNewest)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get offset: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
 	}
 
@@ -281,7 +288,7 @@ ConsumeLoop:
 
 		consumer, err := s.Client.NewConsumer(&cfg, o.Query.Topic, o.Query.Partition, offset)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to make consumer: %v", err)
+			s.errorResponse(w, httpStatusError(err), "Unable to make consumer: %v", err)
 			return
 		}
 		defer consumer.Close()
@@ -293,7 +300,7 @@ ConsumeLoop:
 					incSize = true
 					break
 				}
-				s.errorResponse(w, http.StatusInternalServerError, "Unable to get message: %v", err)
+				s.errorResponse(w, httpStatusError(err), "Unable to get message: %v", err)
 				consumer.Close()
 				return
 			}
@@ -301,7 +308,7 @@ ConsumeLoop:
 			var m json.RawMessage
 
 			if err := json.Unmarshal(msg.Value, &m); err != nil {
-				s.errorResponse(w, http.StatusInternalServerError, "Bad JSON: %v", err)
+				s.errorResponse(w, httpStatusError(err), "Bad JSON: %v", err)
 				consumer.Close()
 				return
 			}
@@ -344,20 +351,20 @@ func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Va
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
 	}
 
 	topics, err := meta.Topics()
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topics: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get topics: %v", err)
 		return
 	}
 
 	for _, topic := range topics {
 		parts, err := meta.Partitions(topic)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
+			s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
 			return
 		}
 		info := &responseTopicListInfo{
@@ -378,20 +385,20 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
 	}
 
 	res.Leader, err = meta.Leader(res.Topic, res.Partition)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get broker: %v", err)
 		return
 	}
 
 	res.Replicas, err = meta.Replicas(res.Topic, res.Partition)
 	if err != nil {
 		if err != KafkaErrReplicaNotAvailable {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
+			s.errorResponse(w, httpStatusError(err), "Unable to get replicas: %v", err)
 			return
 		}
 		log.Printf("Error: Unable to get replicas: %v\n", err)
@@ -401,19 +408,19 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 
 	res.OffsetNewest, err = meta.GetOffsetInfo(res.Topic, res.Partition, KafkaOffsetNewest)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
 		return
 	}
 
 	res.OffsetOldest, err = meta.GetOffsetInfo(res.Topic, res.Partition, KafkaOffsetOldest)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get oldest offset: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
 		return
 	}
 
 	wp, err := meta.WritablePartitions(res.Topic)
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get writable partitions: %v", err)
 		return
 	}
 
@@ -427,13 +434,13 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get metadata: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
 	}
 
 	found, err := meta.inTopics(p.Get("topic"))
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get topic: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
 		return
 	}
 
@@ -444,13 +451,13 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 
 	writable, err := meta.WritablePartitions(p.Get("topic"))
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get writable partitions: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get writable partitions: %v", err)
 		return
 	}
 
 	parts, err := meta.Partitions(p.Get("topic"))
 	if err != nil {
-		s.errorResponse(w, http.StatusInternalServerError, "Unable to get partitions: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
 		return
 	}
 
@@ -463,14 +470,14 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 
 		r.Leader, err = meta.Leader(r.Topic, r.Partition)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get broker: %v", err)
+			s.errorResponse(w, httpStatusError(err), "Unable to get broker: %v", err)
 			return
 		}
 
 		r.Replicas, err = meta.Replicas(r.Topic, r.Partition)
 		if err != nil {
 			if err != KafkaErrReplicaNotAvailable {
-				s.errorResponse(w, http.StatusInternalServerError, "Unable to get replicas: %v", err)
+				s.errorResponse(w, httpStatusError(err), "Unable to get replicas: %v", err)
 				return
 			}
 			log.Printf("Error: Unable to get replicas: %v\n", err)
@@ -480,13 +487,13 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 
 		r.OffsetNewest, err = meta.GetOffsetInfo(r.Topic, r.Partition, KafkaOffsetNewest)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get newest offset: %v", err)
+			s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
 			return
 		}
 
 		r.OffsetOldest, err = meta.GetOffsetInfo(r.Topic, r.Partition, KafkaOffsetOldest)
 		if err != nil {
-			s.errorResponse(w, http.StatusInternalServerError, "Unable to get oldest offset: %v", err)
+			s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
 			return
 		}
 

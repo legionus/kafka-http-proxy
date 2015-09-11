@@ -79,6 +79,15 @@ func (l *kafkaLogger) Error(msg string, args ...interface{}) {
 	e.Errorf("[%s] %s", l.subsys, msg)
 }
 
+// KhpError is our own errors
+type KhpError struct {
+	message string
+}
+
+func (e KhpError) Error() string {
+	return e.message
+}
+
 // KafkaClient is batch of brokers
 type KafkaClient struct {
 	allBrokers    map[int64]*kafka.Broker
@@ -178,7 +187,7 @@ func (k *KafkaClient) Broker() (int64, error) {
 		}
 	default:
 	}
-	return 0, fmt.Errorf("no brokers available")
+	return 0, KhpError{message: "no brokers available"}
 }
 
 // NewConsumer creates a new Consumer.
