@@ -15,12 +15,14 @@ import (
 	"syscall"
 )
 
+// MetricStats contains statistics about HTTP responses.
 type MetricStats struct {
 	ResponsePostTime metrics.Timer
 	ResponseGetTime  metrics.Timer
 	HTTPStatus       map[int]metrics.Counter
 }
 
+// NewMetricStats creates new MetricStats object.
 func NewMetricStats() *MetricStats {
 	m := &MetricStats{
 		ResponsePostTime: metrics.NewTimer(),
@@ -39,6 +41,7 @@ func NewMetricStats() *MetricStats {
 	return m
 }
 
+// StatTimer contains metrics.Timer snapshot.
 type StatTimer struct {
 	Min   int64
 	Max   int64
@@ -51,6 +54,7 @@ type StatTimer struct {
 	RateAvg float64
 }
 
+// GetTimerStat creates new StatTimer by metrics.Timer.
 func GetTimerStat(s metrics.Timer) *StatTimer {
 	return &StatTimer{
 		Min:     s.Min(),
@@ -64,6 +68,7 @@ func GetTimerStat(s metrics.Timer) *StatTimer {
 	}
 }
 
+// RuntimeStat contains runtime statistic.
 type RuntimeStat struct {
 	Goroutines      int
 	CgoCall         int64
@@ -72,6 +77,7 @@ type RuntimeStat struct {
 	UsedDescriptors int
 }
 
+// GetRuntimeStat creates new RuntimeStat object.
 func GetRuntimeStat() *RuntimeStat {
 	data := &RuntimeStat{
 		Goroutines:      runtime.NumGoroutine(),
@@ -95,6 +101,7 @@ func GetRuntimeStat() *RuntimeStat {
 	return data
 }
 
+// NewHTTPStatus creates object for HTTP status statistic.
 func NewHTTPStatus(codes []int) map[int]metrics.Counter {
 	HTTPStatus := make(map[int]metrics.Counter)
 

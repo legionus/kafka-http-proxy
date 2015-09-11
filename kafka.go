@@ -253,6 +253,7 @@ func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
 	}, nil
 }
 
+// GetMetadata returns metadata from kafka.
 func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
 	var err error
 
@@ -274,11 +275,13 @@ func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
 	return meta, nil
 }
 
+// KafkaMetadata is a wrapper around metadata response
 type KafkaMetadata struct {
 	client   *KafkaClient
 	Metadata *proto.MetadataResp
 }
 
+// Topics returns list of known topics
 func (m *KafkaMetadata) Topics() ([]string, error) {
 	var topics []string
 
@@ -336,14 +339,17 @@ func (m *KafkaMetadata) getPartitions(topic string, pType partitionType) ([]int3
 	return partitions, nil
 }
 
+// Partitions returns list of partitions.
 func (m *KafkaMetadata) Partitions(topic string) ([]int32, error) {
 	return m.getPartitions(topic, allPartitions)
 }
 
+// WritablePartitions returns list of partitions with a leader.
 func (m *KafkaMetadata) WritablePartitions(topic string) ([]int32, error) {
 	return m.getPartitions(topic, writablePartitions)
 }
 
+// Leader returns the ID of the node which is the leader for partition.
 func (m *KafkaMetadata) Leader(topic string, partitionID int32) (int32, error) {
 	for _, t := range m.Metadata.Topics {
 		if t.Err != nil {
@@ -365,6 +371,7 @@ func (m *KafkaMetadata) Leader(topic string, partitionID int32) (int32, error) {
 	return -1, nil
 }
 
+// Replicas returns list of replicas for partition.
 func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, error) {
 	for _, t := range m.Metadata.Topics {
 		if t.Err != nil {
@@ -387,6 +394,7 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 	return isr, nil
 }
 
+// GetOffsetInfo returns newest or oldest offset for partition.
 func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int) (offset int64, err error) {
 	brokerID, err := m.client.Broker()
 	if err != nil {
@@ -411,6 +419,7 @@ func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int
 	return
 }
 
+// KafkaConsumer is a wrapper around kafka.Consumer.
 type KafkaConsumer struct {
 	client   *KafkaClient
 	brokerID int64
@@ -418,6 +427,7 @@ type KafkaConsumer struct {
 	opened   bool
 }
 
+// Close frees the connection and returns it to the free pool.
 func (c *KafkaConsumer) Close() error {
 	if c.opened {
 		c.client.freeBrokers <- c.brokerID
@@ -426,21 +436,25 @@ func (c *KafkaConsumer) Close() error {
 	return nil
 }
 
+// Message returns message from kafka.
 func (c *KafkaConsumer) Message() (*proto.Message, error) {
 	return c.consumer.Consume()
 }
 
+// KafkaProducer is a wrapper around kafka.Producer.
 type KafkaProducer struct {
 	client   *KafkaClient
 	brokerID int64
 	producer kafka.Producer
 }
 
+// Close frees the connection and returns it to the free pool.
 func (p *KafkaProducer) Close() error {
 	p.client.freeBrokers <- p.brokerID
 	return nil
 }
 
+// SendMessage sends message in kafka.
 func (p *KafkaProducer) SendMessage(topic string, partitionID int32, message []byte) (int64, error) {
 	return p.producer.Produce(topic, partitionID, &proto.Message{
 		Value: message,
