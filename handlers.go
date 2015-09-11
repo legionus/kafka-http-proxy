@@ -83,7 +83,7 @@ func (s *Server) rootHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
             <td>GET</td>
             <td>
                <p><code>{schema}://{host}/v1/topics/{topic}/{partition}?relative={position}&limit={limit}</code></p>
-               The <p>{position}</p> can be positive or negative.
+               The <b>{position}</b> can be positive or negative.
             </td>
           </tr>
           <tr>
