@@ -65,13 +65,18 @@ func (s *Server) rootHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
             <td><code>{schema}://{host}/v1/topics/{topic}/{partition}</code></td>
           </tr>
           <tr>
-            <th class="text-right">Read from Kafka</th>
+            <th class="text-right">Read from Kafka by absolute position</th>
             <td>GET</td>
             <td>
                <code>{schema}://{host}/v1/topics/{topic}/{partition}?offset={offset}&limit={limit}</code>
-               <p>To obtain data relative to the beginning or end of the queue:</p>
-               <code>{schema}://{host}/v1/topics/{topic}/{partition}?relative={position}&limit={limit}</code>
-               <p>The <code>{position}</code> can be positive or negative.</p>
+            </td>
+          </tr>
+          <tr>
+            <th class="text-right">Read data relative to the beginning or end of the queue</th>
+            <td>GET</td>
+            <td>
+               <p><code>{schema}://{host}/v1/topics/{topic}/{partition}?relative={position}&limit={limit}</code></p>
+               The <p>{position}</p> can be positive or negative.
             </td>
           </tr>
           <tr>
