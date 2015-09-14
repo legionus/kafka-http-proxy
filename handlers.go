@@ -48,7 +48,7 @@ type responseTopicListInfo struct {
 }
 
 func httpStatusError(err error) int {
-	if _, ok := err.(*KhpError); ok {
+	if _, ok := err.(KhpError); ok {
 		return http.StatusServiceUnavailable
 	}
 	return http.StatusInternalServerError
