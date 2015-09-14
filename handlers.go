@@ -286,6 +286,10 @@ ConsumeLoop:
 	for {
 		cfg.Consumer.MaxFetchSize = msgSize * length
 
+		if cfg.Consumer.MaxFetchSize > s.Cfg.Consumer.MaxFetchSize {
+			cfg.Consumer.MaxFetchSize = s.Cfg.Consumer.MaxFetchSize
+		}
+
 		consumer, err := s.Client.NewConsumer(&cfg, o.Query.Topic, o.Query.Partition, offset)
 		if err != nil {
 			s.errorResponse(w, httpStatusError(err), "Unable to make consumer: %v", err)
@@ -325,16 +329,7 @@ ConsumeLoop:
 		consumer.Close()
 
 		if incSize {
-			if msgSize >= s.Cfg.Consumer.MaxFetchSize {
-				break ConsumeLoop
-			}
-
 			msgSize += s.Cfg.Consumer.DefaultFetchSize
-
-			if msgSize > s.Cfg.Consumer.MaxFetchSize {
-				msgSize = s.Cfg.Consumer.MaxFetchSize
-			}
-
 			incSize = false
 		}
 	}
