@@ -56,15 +56,6 @@ func (resp *HTTPResponse) Write(b []byte) (n int, err error) {
 	return
 }
 
-// JSONResponse is a template for all the proxy answers.
-type JSONResponse struct {
-	// Response type. It can be either "success" or "error".
-	Status string `json:"status"`
-
-	// The response data. It depends on the type of response.
-	Data interface{} `json:"data"`
-}
-
 // JSONErrorData is a template for error answers.
 type JSONErrorData struct {
 	// HTTP status code.
@@ -143,57 +134,80 @@ func (s *Server) rawResponse(resp *HTTPResponse, status int, b []byte) {
 	resp.Write(b)
 }
 
-func (s *Server) writeResponse(w *HTTPResponse, status int, v *JSONResponse) {
-	w.Header().Set("Content-Type", "application/json")
+func (s *Server) beginError(w *HTTPResponse, status int) {
+	s.Stats.HTTPStatus[status].Inc(1)
 
-	b, err := json.Marshal(v)
+	w.Header().Set("Content-Type", "application/json")
+	s.rawResponse(w, status, []byte(`{"status":"error","data":`))
+}
+
+func (s *Server) beginSuccess(w *HTTPResponse) {
+	s.Stats.HTTPStatus[http.StatusOK].Inc(1)
+
+	w.Header().Set("Content-Type", "application/json")
+	s.rawResponse(w, http.StatusOK, []byte(`{"status":"success","data":`))
+}
+
+func (s *Server) endResponse(w *HTTPResponse) {
+	w.Write([]byte(`}`))
+}
+
+func (s *Server) successResponse(w *HTTPResponse, m interface{}) {
+	b, err := json.Marshal(m)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Errorln("Unable to marshal result:", err)
 		return
 	}
 
-	s.rawResponse(w, status, b)
-	s.Stats.HTTPStatus[status].Inc(1)
-}
-
-func (s *Server) successResponse(w *HTTPResponse, m interface{}) {
-	resp := &JSONResponse{
-		Status: "success",
-		Data:   m,
-	}
-	s.writeResponse(w, http.StatusOK, resp)
+	s.beginSuccess(w)
+	w.Write(b)
+	s.endResponse(w)
 }
 
 func (s *Server) errorResponse(w *HTTPResponse, status int, format string, args ...interface{}) {
 	w.HTTPError = fmt.Sprintf(format, args...)
 
-	resp := &JSONResponse{
-		Status: "error",
-		Data: &JSONErrorData{
-			Code:    status,
-			Message: w.HTTPError,
-		},
+	data := &JSONErrorData{
+		Code:    status,
+		Message: w.HTTPError,
 	}
-	log.Debugf("%+v", resp.Data)
-	s.writeResponse(w, status, resp)
+	log.Debugf("%+v", data)
+
+	b, err := json.Marshal(data)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Errorln("Unable to marshal result:", err)
+		return
+	}
+
+	s.beginError(w, status)
+	w.Write(b)
+	s.endResponse(w)
 }
 
 func (s *Server) errorOutOfRange(w *HTTPResponse, topic string, partition int32, offsetFrom int64, offsetTo int64) {
 	status := http.StatusRequestedRangeNotSatisfiable
-	resp := &JSONResponse{
-		Status: "error",
-		Data: &JSONErrorOutOfRange{
-			Code:         status,
-			Message:      fmt.Sprintf("Offset out of range (%v, %v)", offsetFrom, offsetTo),
-			Topic:        topic,
-			Partition:    partition,
-			OffsetOldest: offsetFrom,
-			OffsetNewest: offsetTo,
-		},
+	data := &JSONErrorOutOfRange{
+		Code:         status,
+		Message:      fmt.Sprintf("Offset out of range (%v, %v)", offsetFrom, offsetTo),
+		Topic:        topic,
+		Partition:    partition,
+		OffsetOldest: offsetFrom,
+		OffsetNewest: offsetTo,
 	}
-	log.Debugf("%+v", resp.Data)
-	s.writeResponse(w, status, resp)
+	log.Debugf("%+v", data)
+
+	b, err := json.Marshal(data)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Errorln("Unable to marshal result:", err)
+		return
+	}
+
+	s.beginError(w, status)
+	w.Write(b)
+	s.endResponse(w)
 }
 
 func (s *Server) fetchMetadata() (*KafkaMetadata, error) {

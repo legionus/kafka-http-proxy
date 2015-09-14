@@ -277,10 +277,18 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
+	query, err := json.Marshal(o.Query)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to marshal json: %v", err)
+		return
+	}
+
 	cfg := *s.Cfg
 	offset := o.Query.Offset
 	msgSize := s.MessageSize.Get(o.Query.Topic, s.Cfg.Consumer.DefaultFetchSize)
 	incSize := false
+
+	successSent := false
 
 ConsumeLoop:
 	for {
@@ -292,7 +300,9 @@ ConsumeLoop:
 
 		consumer, err := s.Client.NewConsumer(&cfg, o.Query.Topic, o.Query.Partition, offset)
 		if err != nil {
-			s.errorResponse(w, httpStatusError(err), "Unable to make consumer: %v", err)
+			if !successSent {
+				s.errorResponse(w, httpStatusError(err), "Unable to make consumer: %v", err)
+			}
 			return
 		}
 		defer consumer.Close()
@@ -304,19 +314,26 @@ ConsumeLoop:
 					incSize = true
 					break
 				}
-				s.errorResponse(w, httpStatusError(err), "Unable to get message: %v", err)
+				if !successSent {
+					s.errorResponse(w, httpStatusError(err), "Unable to get message: %v", err)
+				}
 				consumer.Close()
 				return
 			}
 
-			var m json.RawMessage
+			if !successSent {
+				successSent = true
 
-			if err := json.Unmarshal(msg.Value, &m); err != nil {
-				s.errorResponse(w, httpStatusError(err), "Bad JSON: %v", err)
-				consumer.Close()
-				return
+				s.beginSuccess(w)
+				w.Write([]byte(`{`))
+				w.Write([]byte(`"query":`))
+				w.Write(query)
+				w.Write([]byte(`,"messages":[`))
+			} else {
+				w.Write([]byte(","))
 			}
-			o.Messages = append(o.Messages, m)
+
+			w.Write(msg.Value)
 
 			offset = msg.Offset + 1
 			length--
@@ -334,11 +351,12 @@ ConsumeLoop:
 		}
 	}
 
-	if len(o.Messages) > 0 {
+	w.Write([]byte(`]}`))
+	s.endResponse(w)
+
+	if successSent {
 		s.MessageSize.Put(o.Query.Topic, msgSize)
 	}
-
-	s.successResponse(w, o)
 }
 
 func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
