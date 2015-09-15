@@ -147,22 +147,19 @@ func (s *Server) rawResponse(resp *HTTPResponse, status int, b []byte) {
 	resp.Write(b)
 }
 
-func (s *Server) beginError(w *HTTPResponse, status int) {
+func (s *Server) beginResponse(w *HTTPResponse, status int) {
 	s.Stats.HTTPStatus[status].Inc(1)
 
 	w.Header().Set("Content-Type", "application/json")
-	s.rawResponse(w, status, []byte(`{"status":"error","data":`))
+	s.rawResponse(w, status, []byte(`{"data":`))
 }
 
-func (s *Server) beginSuccess(w *HTTPResponse) {
-	s.Stats.HTTPStatus[http.StatusOK].Inc(1)
-
-	w.Header().Set("Content-Type", "application/json")
-	s.rawResponse(w, http.StatusOK, []byte(`{"status":"success","data":`))
+func (s *Server) endResponseError(w *HTTPResponse) {
+	w.Write([]byte(`,"status":"error"}`))
 }
 
-func (s *Server) endResponse(w *HTTPResponse) {
-	w.Write([]byte(`}`))
+func (s *Server) endResponseSuccess(w *HTTPResponse) {
+	w.Write([]byte(`,"status":"success"}`))
 }
 
 func (s *Server) successResponse(w *HTTPResponse, m interface{}) {
@@ -173,9 +170,9 @@ func (s *Server) successResponse(w *HTTPResponse, m interface{}) {
 		return
 	}
 
-	s.beginSuccess(w)
+	s.beginResponse(w, http.StatusOK)
 	w.Write(b)
-	s.endResponse(w)
+	s.endResponseSuccess(w)
 }
 
 func (s *Server) errorResponse(w *HTTPResponse, status int, format string, args ...interface{}) {
@@ -194,9 +191,9 @@ func (s *Server) errorResponse(w *HTTPResponse, status int, format string, args 
 		return
 	}
 
-	s.beginError(w, status)
+	s.beginResponse(w, status)
 	w.Write(b)
-	s.endResponse(w)
+	s.endResponseError(w)
 }
 
 func (s *Server) errorOutOfRange(w *HTTPResponse, topic string, partition int32, offsetFrom int64, offsetTo int64) {
@@ -218,9 +215,9 @@ func (s *Server) errorOutOfRange(w *HTTPResponse, topic string, partition int32,
 		return
 	}
 
-	s.beginError(w, status)
+	s.beginResponse(w, status)
 	w.Write(b)
-	s.endResponse(w)
+	s.endResponseError(w)
 }
 
 func (s *Server) fetchMetadata() (*KafkaMetadata, error) {

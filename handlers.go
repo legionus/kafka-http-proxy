@@ -336,7 +336,7 @@ ConsumeLoop:
 			if !successSent {
 				successSent = true
 
-				s.beginSuccess(w)
+				s.beginResponse(w, http.StatusOK)
 				w.Write([]byte(`{`))
 				w.Write([]byte(`"query":`))
 				w.Write(queryStr)
@@ -372,7 +372,7 @@ ConsumeLoop:
 	}
 
 	if !successSent {
-		s.beginSuccess(w)
+		s.beginResponse(w, http.StatusOK)
 		w.Write([]byte(`{`))
 		w.Write([]byte(`"query":`))
 		w.Write(queryStr)
@@ -380,7 +380,7 @@ ConsumeLoop:
 	}
 
 	w.Write([]byte(`]}`))
-	s.endResponse(w)
+	s.endResponseSuccess(w)
 
 	if maxSize > 0 {
 		s.MessageSize.Put(query.Topic, int32(maxSize))
