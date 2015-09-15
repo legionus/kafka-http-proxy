@@ -113,6 +113,73 @@ func (s *Server) notAllowedHandler(w *HTTPResponse, r *http.Request, p *url.Valu
 	s.errorResponse(w, http.StatusMethodNotAllowed, "405 Method Not Allowed")
 }
 
+func (s *Server) validRequest(w *HTTPResponse, p *url.Values) bool {
+	topic := p.Get("topic")
+
+	if topic == "" {
+		s.errorResponse(w, http.StatusBadRequest, "Topic name required")
+		return false
+	}
+
+	meta, err := s.fetchMetadata()
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
+		return false
+	}
+
+	found, err := meta.inTopics(topic)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
+		return false
+	}
+
+	if !found {
+		s.errorResponse(w, http.StatusBadRequest, "Topic unknown")
+		return false
+	}
+
+	if p.Get("partition") == "" {
+		return true
+	}
+
+	partition := toInt32(p.Get("partition"))
+
+	parts, err := meta.Partitions(topic)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
+		return false
+	}
+
+	if !inSlice(partition, parts) {
+		s.errorResponse(w, http.StatusBadRequest, "Unknown partition for the specified topic")
+		return false
+	}
+
+	return true
+}
+
+func (s *Server) getOffsets(w *HTTPResponse, topic string, partition int32) (int64, int64, bool) {
+	meta, err := s.fetchMetadata()
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
+		return 0, 0, false
+	}
+
+	offsetNewest, err := meta.GetOffsetInfo(topic, partition, KafkaOffsetNewest)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
+		return 0, 0, false
+	}
+
+	offsetOldest, err := meta.GetOffsetInfo(topic, partition, KafkaOffsetOldest)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
+		return 0, 0, false
+	}
+
+	return offsetOldest, offsetNewest, true
+}
+
 func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	defer s.Stats.ResponsePostTime.Start().Stop()
 
@@ -139,31 +206,7 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	meta, err := s.fetchMetadata()
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
-		return
-	}
-
-	found, err := meta.inTopics(kafka.Topic)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
-		return
-	}
-
-	if !found {
-		s.errorResponse(w, http.StatusBadRequest, "Topic not found")
-		return
-	}
-
-	parts, err := meta.Partitions(kafka.Topic)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
-		return
-	}
-
-	if !inSlice(kafka.Partition, parts) {
-		s.errorResponse(w, http.StatusBadRequest, "Partition not found")
+	if !s.validRequest(w, p) {
 		return
 	}
 
@@ -211,43 +254,12 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		length = 1
 	}
 
-	meta, err := s.fetchMetadata()
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
+	if !s.validRequest(w, p) {
 		return
 	}
 
-	found, err := meta.inTopics(query.Topic)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
-		return
-	}
-
-	if !found {
-		s.errorResponse(w, http.StatusBadRequest, "Topic not found")
-		return
-	}
-
-	parts, err := meta.Partitions(query.Topic)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
-		return
-	}
-
-	if !inSlice(query.Partition, parts) {
-		s.errorResponse(w, http.StatusBadRequest, "Partition not found")
-		return
-	}
-
-	offsetFrom, err := meta.GetOffsetInfo(query.Topic, query.Partition, KafkaOffsetOldest)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
-		return
-	}
-
-	offsetTo, err := meta.GetOffsetInfo(query.Topic, query.Partition, KafkaOffsetNewest)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
+	offsetFrom, offsetTo, ok := s.getOffsets(w, query.Topic, query.Partition)
+	if !ok {
 		return
 	}
 
@@ -371,7 +383,7 @@ ConsumeLoop:
 	s.endResponse(w)
 
 	if maxSize > 0 {
-		s.MessageSize.Put(query.Topic, maxSize)
+		s.MessageSize.Put(query.Topic, int32(maxSize))
 	}
 }
 
@@ -407,6 +419,10 @@ func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Va
 }
 
 func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
+	if !s.validRequest(w, p) {
+		return
+	}
+
 	res := &responsePartitionInfo{
 		Topic:     p.Get("topic"),
 		Partition: toInt32(p.Get("partition")),
@@ -435,15 +451,8 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 	}
 	res.ReplicasNum = len(res.Replicas)
 
-	res.OffsetNewest, err = meta.GetOffsetInfo(res.Topic, res.Partition, KafkaOffsetNewest)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
-		return
-	}
-
-	res.OffsetOldest, err = meta.GetOffsetInfo(res.Topic, res.Partition, KafkaOffsetOldest)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
+	var ok bool
+	if res.OffsetOldest, res.OffsetNewest, ok = s.getOffsets(w, res.Topic, res.Partition); !ok {
 		return
 	}
 
@@ -459,22 +468,15 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 }
 
 func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
+	if !s.validRequest(w, p) {
+		return
+	}
+
 	res := []responsePartitionInfo{}
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
-		return
-	}
-
-	found, err := meta.inTopics(p.Get("topic"))
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
-		return
-	}
-
-	if !found {
-		s.errorResponse(w, http.StatusBadRequest, "Topic not found")
 		return
 	}
 
@@ -489,6 +491,8 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
 		return
 	}
+
+	var ok bool
 
 	for partition := range parts {
 		if !s.connIsAlive(w) {
@@ -518,15 +522,7 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 		}
 		r.ReplicasNum = len(r.Replicas)
 
-		r.OffsetNewest, err = meta.GetOffsetInfo(r.Topic, r.Partition, KafkaOffsetNewest)
-		if err != nil {
-			s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
-			return
-		}
-
-		r.OffsetOldest, err = meta.GetOffsetInfo(r.Topic, r.Partition, KafkaOffsetOldest)
-		if err != nil {
-			s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
+		if r.OffsetOldest, r.OffsetNewest, ok = s.getOffsets(w, r.Topic, r.Partition); !ok {
 			return
 		}
 
