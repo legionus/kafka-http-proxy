@@ -216,6 +216,9 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	}
 
 	length := toInt32(varsLength)
+	if length <= 0 {
+		length = 1
+	}
 
 	meta, err := s.fetchMetadata()
 	if err != nil {
@@ -351,6 +354,10 @@ ConsumeLoop:
 		consumer.Close()
 
 		if incSize {
+			if msgSize >= s.Cfg.Consumer.MaxFetchSize {
+				break ConsumeLoop
+			}
+
 			msgSize += s.Cfg.Consumer.DefaultFetchSize
 			incSize = false
 		}
