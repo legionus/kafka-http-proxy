@@ -23,12 +23,6 @@ type kafkaParameters struct {
 	Offset    int64  `json:"offset"`
 }
 
-// ResponseMessages is a templete for GET response.
-type responseMessages struct {
-	Query    kafkaParameters   `json:"query"`
-	Messages []json.RawMessage `json:"messages"`
-}
-
 // ResponsePartitionInfo contains information about Kafka partition.
 type responsePartitionInfo struct {
 	Topic        string  `json:"topic"`
@@ -206,13 +200,10 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	varsOffset = p.Get("offset")
 	varsRelative = p.Get("relative")
 
-	o := &responseMessages{
-		Query: kafkaParameters{
-			Topic:     p.Get("topic"),
-			Partition: toInt32(p.Get("partition")),
-			Offset:    -1,
-		},
-		Messages: []json.RawMessage{},
+	query := kafkaParameters{
+		Topic:     p.Get("topic"),
+		Partition: toInt32(p.Get("partition")),
+		Offset:    -1,
 	}
 
 	length := toInt32(varsLength)
@@ -226,7 +217,7 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	found, err := meta.inTopics(o.Query.Topic)
+	found, err := meta.inTopics(query.Topic)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get topic: %v", err)
 		return
@@ -237,24 +228,24 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	parts, err := meta.Partitions(o.Query.Topic)
+	parts, err := meta.Partitions(query.Topic)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get partitions: %v", err)
 		return
 	}
 
-	if !inSlice(o.Query.Partition, parts) {
+	if !inSlice(query.Partition, parts) {
 		s.errorResponse(w, http.StatusBadRequest, "Partition not found")
 		return
 	}
 
-	offsetFrom, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetOldest)
+	offsetFrom, err := meta.GetOffsetInfo(query.Topic, query.Partition, KafkaOffsetOldest)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
 	}
 
-	offsetTo, err := meta.GetOffsetInfo(o.Query.Topic, o.Query.Partition, KafkaOffsetNewest)
+	offsetTo, err := meta.GetOffsetInfo(query.Topic, query.Partition, KafkaOffsetNewest)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
@@ -264,31 +255,31 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		relative := toInt64(varsRelative)
 
 		if relative >= 0 {
-			o.Query.Offset = offsetFrom + relative
+			query.Offset = offsetFrom + relative
 		} else {
-			o.Query.Offset = offsetTo + relative
+			query.Offset = offsetTo + relative
 		}
 	} else if varsOffset != "" {
-		o.Query.Offset = toInt64(varsOffset)
+		query.Offset = toInt64(varsOffset)
 	} else {
 		// Set default value
-		o.Query.Offset = offsetFrom
+		query.Offset = offsetFrom
 	}
 
-	if o.Query.Offset < offsetFrom || o.Query.Offset >= offsetTo {
-		s.errorOutOfRange(w, o.Query.Topic, o.Query.Partition, offsetFrom, offsetTo)
+	if query.Offset < offsetFrom || query.Offset >= offsetTo {
+		s.errorOutOfRange(w, query.Topic, query.Partition, offsetFrom, offsetTo)
 		return
 	}
 
-	query, err := json.Marshal(o.Query)
+	queryStr, err := json.Marshal(query)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to marshal json: %v", err)
 		return
 	}
 
 	cfg := *s.Cfg
-	offset := o.Query.Offset
-	msgSize := s.MessageSize.Get(o.Query.Topic, s.Cfg.Consumer.DefaultFetchSize)
+	offset := query.Offset
+	msgSize := s.MessageSize.Get(query.Topic, s.Cfg.Consumer.DefaultFetchSize)
 	incSize := false
 
 	successSent := false
@@ -301,7 +292,7 @@ ConsumeLoop:
 			cfg.Consumer.MaxFetchSize = s.Cfg.Consumer.MaxFetchSize
 		}
 
-		consumer, err := s.Client.NewConsumer(&cfg, o.Query.Topic, o.Query.Partition, offset)
+		consumer, err := s.Client.NewConsumer(&cfg, query.Topic, query.Partition, offset)
 		if err != nil {
 			if !successSent {
 				s.errorResponse(w, httpStatusError(err), "Unable to make consumer: %v", err)
@@ -335,7 +326,7 @@ ConsumeLoop:
 				s.beginSuccess(w)
 				w.Write([]byte(`{`))
 				w.Write([]byte(`"query":`))
-				w.Write(query)
+				w.Write(queryStr)
 				w.Write([]byte(`,"messages":[`))
 			} else {
 				w.Write([]byte(`,`))
@@ -367,10 +358,10 @@ ConsumeLoop:
 		s.beginSuccess(w)
 		w.Write([]byte(`{`))
 		w.Write([]byte(`"query":`))
-		w.Write(query)
+		w.Write(queryStr)
 		w.Write([]byte(`,"messages":[`))
 	} else {
-		s.MessageSize.Put(o.Query.Topic, msgSize)
+		s.MessageSize.Put(query.Topic, msgSize)
 	}
 
 	w.Write([]byte(`]}`))
