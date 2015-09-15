@@ -289,7 +289,6 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	incSize := false
 
 	successSent := false
-	closeNotify := w.ResponseWriter.(http.CloseNotifier).CloseNotify()
 
 ConsumeLoop:
 	for {
@@ -309,13 +308,9 @@ ConsumeLoop:
 		defer consumer.Close()
 
 		for {
-			select {
-			case closed := <-closeNotify:
-				if closed {
-					consumer.Close()
-					return
-				}
-			default:
+			if !s.connIsAlive(w) {
+				consumer.Close()
+				return
 			}
 
 			msg, err := consumer.Message()
@@ -340,7 +335,7 @@ ConsumeLoop:
 				w.Write(query)
 				w.Write([]byte(`,"messages":[`))
 			} else {
-				w.Write([]byte(","))
+				w.Write([]byte(`,`))
 			}
 
 			w.Write(msg.Value)
@@ -364,7 +359,7 @@ ConsumeLoop:
 	w.Write([]byte(`]}`))
 	s.endResponse(w)
 
-	if successSent {
+	if !successSent {
 		s.MessageSize.Put(o.Query.Topic, msgSize)
 	}
 }
@@ -453,8 +448,6 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 }
 
 func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
-	closeNotify := w.ResponseWriter.(http.CloseNotifier).CloseNotify()
-
 	res := []responsePartitionInfo{}
 
 	meta, err := s.fetchMetadata()
@@ -487,12 +480,8 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 	}
 
 	for partition := range parts {
-		select {
-		case closed := <-closeNotify:
-			if closed {
-				return
-			}
-		default:
+		if !s.connIsAlive(w) {
+			return
 		}
 
 		r := &responsePartitionInfo{

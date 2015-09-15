@@ -127,6 +127,19 @@ func (s *Server) closeConnTrack(cl ConnTrack) {
 	log.Debugf("Closed connection %d (total=%d)", cl.ConnID, conns)
 }
 
+func (s *Server) connIsAlive(w *HTTPResponse) bool {
+	closeNotify := w.ResponseWriter.(http.CloseNotifier).CloseNotify()
+
+	select {
+	case closed := <-closeNotify:
+		if closed {
+			return false
+		}
+	default:
+	}
+	return true
+}
+
 func (s *Server) rawResponse(resp *HTTPResponse, status int, b []byte) {
 	resp.HTTPStatus = status
 
