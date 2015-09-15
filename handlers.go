@@ -279,14 +279,15 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	cfg := *s.Cfg
 	offset := query.Offset
-	msgSize := s.MessageSize.Get(query.Topic, s.Cfg.Consumer.DefaultFetchSize)
-	incSize := false
+	size := s.MessageSize.Get(query.Topic, s.Cfg.Consumer.DefaultFetchSize)
+	maxSize := 0
 
+	notEnoughSize := false
 	successSent := false
 
 ConsumeLoop:
 	for {
-		cfg.Consumer.MaxFetchSize = msgSize * length
+		cfg.Consumer.MaxFetchSize = size * length
 
 		if cfg.Consumer.MaxFetchSize > s.Cfg.Consumer.MaxFetchSize {
 			cfg.Consumer.MaxFetchSize = s.Cfg.Consumer.MaxFetchSize
@@ -310,7 +311,7 @@ ConsumeLoop:
 			msg, err := consumer.Message()
 			if err != nil {
 				if err == KafkaErrNoData {
-					incSize = true
+					notEnoughSize = true
 					break
 				}
 				if !successSent {
@@ -337,6 +338,10 @@ ConsumeLoop:
 			offset = msg.Offset + 1
 			length--
 
+			if len(msg.Value) > maxSize {
+				maxSize = len(msg.Value)
+			}
+
 			if offset >= offsetTo || length == 0 {
 				consumer.Close()
 				break ConsumeLoop
@@ -344,13 +349,13 @@ ConsumeLoop:
 		}
 		consumer.Close()
 
-		if incSize {
-			if msgSize >= s.Cfg.Consumer.MaxFetchSize {
+		if notEnoughSize {
+			if size >= s.Cfg.Consumer.MaxFetchSize {
 				break ConsumeLoop
 			}
 
-			msgSize += s.Cfg.Consumer.DefaultFetchSize
-			incSize = false
+			size += s.Cfg.Consumer.DefaultFetchSize
+			notEnoughSize = false
 		}
 	}
 
@@ -360,12 +365,14 @@ ConsumeLoop:
 		w.Write([]byte(`"query":`))
 		w.Write(queryStr)
 		w.Write([]byte(`,"messages":[`))
-	} else {
-		s.MessageSize.Put(query.Topic, msgSize)
 	}
 
 	w.Write([]byte(`]}`))
 	s.endResponse(w)
+
+	if maxSize > 0 {
+		s.MessageSize.Put(query.Topic, maxSize)
+	}
 }
 
 func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
