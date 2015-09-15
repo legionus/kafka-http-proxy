@@ -356,12 +356,18 @@ ConsumeLoop:
 		}
 	}
 
-	w.Write([]byte(`]}`))
-	s.endResponse(w)
-
 	if !successSent {
+		s.beginSuccess(w)
+		w.Write([]byte(`{`))
+		w.Write([]byte(`"query":`))
+		w.Write(query)
+		w.Write([]byte(`,"messages":[`))
+	} else {
 		s.MessageSize.Put(o.Query.Topic, msgSize)
 	}
+
+	w.Write([]byte(`]}`))
+	s.endResponse(w)
 }
 
 func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
