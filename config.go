@@ -56,6 +56,7 @@ type Config struct {
 		RetryWait        CfgDuration
 		RetryErrLimit    int
 		RetryErrWait     CfgDuration
+		ReadTimeout      CfgDuration
 		MinFetchSize     int32
 		MaxFetchSize     int32
 		DefaultFetchSize int32
@@ -93,6 +94,7 @@ func (c *Config) SetDefaults() {
 	c.Consumer.RetryWait.Duration = 50 * time.Millisecond
 	c.Consumer.RetryErrLimit = 2
 	c.Consumer.RetryErrWait.Duration = 50 * time.Millisecond
+	c.Consumer.ReadTimeout.Duration = 0
 	c.Consumer.MinFetchSize = 1
 	c.Consumer.MaxFetchSize = 4194304
 	c.Consumer.DefaultFetchSize = 524288

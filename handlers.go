@@ -314,6 +314,8 @@ ConsumeLoop:
 		}
 		defer consumer.Close()
 
+		consumer.ReadTimeout = cfg.Consumer.ReadTimeout.Duration
+
 		for {
 			if !s.connIsAlive(w) {
 				consumer.Close()
