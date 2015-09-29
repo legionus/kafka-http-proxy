@@ -31,6 +31,12 @@ var (
 	KafkaErrNoData = kafka.ErrNoData
 )
 
+const (
+	_                     = iota
+	KhpErrorNoBrokers int = 1
+	KhpErrorReadTimeout
+)
+
 type kafkaLogger struct {
 	subsys string
 }
@@ -81,6 +87,7 @@ func (l *kafkaLogger) Error(msg string, args ...interface{}) {
 
 // KhpError is our own errors
 type KhpError struct {
+	Errno   int
 	message string
 }
 
@@ -187,7 +194,10 @@ func (k *KafkaClient) Broker() (int64, error) {
 		}
 	default:
 	}
-	return 0, KhpError{message: "no brokers available"}
+	return 0, KhpError{
+		Errno:   KhpErrorNoBrokers,
+		message: "no brokers available",
+	}
 }
 
 // NewConsumer creates a new Consumer.
@@ -439,7 +449,7 @@ func (c *KafkaConsumer) Close() error {
 
 // Message returns message from kafka.
 func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
-	result  := make(chan struct{})
+	result := make(chan struct{})
 	timeout := make(chan struct{})
 
 	if c.ReadTimeout > 0 {
@@ -459,7 +469,10 @@ func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
 	case <-result:
 		msg, err = kafkaMsg, kafkaErr
 	case <-timeout:
-		err = KhpError{message: "Timeout"}
+		err = KhpError{
+			Errno:   KhpErrorReadTimeout,
+			message: "Read timeout",
+		}
 	}
 	return
 }

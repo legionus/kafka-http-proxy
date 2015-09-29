@@ -262,6 +262,10 @@ func TestConsumerTimeout(t *testing.T) {
 		t.Fatalf("expected no errors, got %s", err)
 	}
 
+	if err.(KhpError).Errno != KhpErrorReadTimeout {
+		t.Fatalf("expected KhpErrorReadTimeout, got %s", err)
+	}
+
 	if msg != nil {
 		t.Fatalf("unexpected result: %#v", msg)
 	}
