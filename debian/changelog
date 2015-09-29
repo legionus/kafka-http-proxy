@@ -1,3 +1,9 @@
+kafka-http-proxy (0.6.1) unstable; urgency=low
+
+  * Stream messages in json format.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 29 Sep 2015 19:45:50 +0300
+
 kafka-http-proxy (0.6.0) unstable; urgency=low
 
   * Stream messages in json format.
