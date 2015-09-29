@@ -439,31 +439,27 @@ func (c *KafkaConsumer) Close() error {
 
 // Message returns message from kafka.
 func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
-	msgResult := make(chan *proto.Message)
-	msgError := make(chan error)
-	msgTimeout := make(chan struct{})
+	result  := make(chan struct{})
+	timeout := make(chan struct{})
 
 	if c.ReadTimeout > 0 {
-		timer := time.AfterFunc(c.ReadTimeout, func() { msgTimeout <- struct{}{} })
+		timer := time.AfterFunc(c.ReadTimeout, func() { close(timeout) })
 		defer timer.Stop()
 	}
 
+	var kafkaMsg *proto.Message
+	var kafkaErr error
+
 	go func() {
-		res, err := c.consumer.Consume()
-		if err != nil {
-			msgError <- err
-			return
-		}
-		msgResult <- res
+		kafkaMsg, kafkaErr = c.consumer.Consume()
+		close(result)
 	}()
 
 	select {
-	case msg = <-msgResult:
-	case err = <-msgError:
-	case _, ok := <-msgTimeout:
-		if ok {
-			err = KhpError{message: "Timeout"}
-		}
+	case <-result:
+		msg, err = kafkaMsg, kafkaErr
+	case <-timeout:
+		err = KhpError{message: "Timeout"}
 	}
 	return
 }
