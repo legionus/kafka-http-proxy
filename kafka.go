@@ -421,10 +421,11 @@ func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int
 
 // KafkaConsumer is a wrapper around kafka.Consumer.
 type KafkaConsumer struct {
-	client   *KafkaClient
-	brokerID int64
-	consumer kafka.Consumer
-	opened   bool
+	client      *KafkaClient
+	brokerID    int64
+	consumer    kafka.Consumer
+	opened      bool
+	ReadTimeout time.Duration
 }
 
 // Close frees the connection and returns it to the free pool.
@@ -437,8 +438,34 @@ func (c *KafkaConsumer) Close() error {
 }
 
 // Message returns message from kafka.
-func (c *KafkaConsumer) Message() (*proto.Message, error) {
-	return c.consumer.Consume()
+func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
+	msgResult := make(chan *proto.Message)
+	msgError := make(chan error)
+	msgTimeout := make(chan struct{})
+
+	if c.ReadTimeout > 0 {
+		timer := time.AfterFunc(c.ReadTimeout, func() { msgTimeout <- struct{}{} })
+		defer timer.Stop()
+	}
+
+	go func() {
+		res, err := c.consumer.Consume()
+		if err != nil {
+			msgError <- err
+			return
+		}
+		msgResult <- res
+	}()
+
+	select {
+	case msg = <-msgResult:
+	case err = <-msgError:
+	case _, ok := <-msgTimeout:
+		if ok {
+			err = KhpError{message: "Timeout"}
+		}
+	}
+	return
 }
 
 // KafkaProducer is a wrapper around kafka.Producer.
