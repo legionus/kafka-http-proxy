@@ -34,7 +34,7 @@ func NewMetricStats() *MetricStats {
 		for {
 			m.ResponseGetTime.Tick()
 			m.ResponsePostTime.Tick()
-			time.Sleep(time.Second)
+			time.Sleep(metrics.TickDuration)
 		}
 	}()
 
