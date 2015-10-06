@@ -158,22 +158,6 @@ func (s *Server) validRequest(w *HTTPResponse, p *url.Values) bool {
 	return true
 }
 
-func (s *Server) getOffsets(w *HTTPResponse, topic string, partition int32) (int64, int64, bool) {
-	offsetNewest, err := s.Client.GetOffsetInfo(topic, partition, KafkaOffsetNewest)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
-		return 0, 0, false
-	}
-
-	offsetOldest, err := s.Client.GetOffsetInfo(topic, partition, KafkaOffsetOldest)
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
-		return 0, 0, false
-	}
-
-	return offsetOldest, offsetNewest, true
-}
-
 func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	defer s.Stats.ResponsePostTime.Start().Stop()
 
@@ -252,8 +236,9 @@ func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 		return
 	}
 
-	offsetFrom, offsetTo, ok := s.getOffsets(w, query.Topic, query.Partition)
-	if !ok {
+	offsetFrom, offsetTo, err := s.Client.GetOffsets(query.Topic, query.Partition)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
 	}
 
@@ -447,8 +432,9 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 	}
 	res.ReplicasNum = len(res.Replicas)
 
-	var ok bool
-	if res.OffsetOldest, res.OffsetNewest, ok = s.getOffsets(w, res.Topic, res.Partition); !ok {
+	res.OffsetNewest, res.OffsetOldest, err = s.Client.GetOffsets(res.Topic, res.Partition)
+	if err != nil {
+		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
 	}
 
@@ -488,8 +474,6 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 		return
 	}
 
-	var ok bool
-
 	for partition := range parts {
 		if !s.connIsAlive(w) {
 			return
@@ -518,7 +502,9 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 		}
 		r.ReplicasNum = len(r.Replicas)
 
-		if r.OffsetOldest, r.OffsetNewest, ok = s.getOffsets(w, r.Topic, r.Partition); !ok {
+		r.OffsetNewest, r.OffsetOldest, err = s.Client.GetOffsets(r.Topic, r.Partition)
+		if err != nil {
+			s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 			return
 		}
 

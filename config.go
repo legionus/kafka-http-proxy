@@ -44,6 +44,7 @@ type Config struct {
 		LeaderRetryLimit int
 		LeaderRetryWait  CfgDuration
 		ReconnectTimeout CfgDuration
+		ReadTimeout      CfgDuration
 	}
 	Producer struct {
 		RequestTimeout CfgDuration
@@ -84,6 +85,7 @@ func (c *Config) SetDefaults() {
 	c.Broker.LeaderRetryLimit = 2
 	c.Broker.LeaderRetryWait.Duration = 500 * time.Millisecond
 	c.Broker.ReconnectTimeout.Duration = 15 * time.Second
+	c.Broker.ReadTimeout.Duration = 100 * time.Millisecond
 
 	c.Producer.RequestTimeout.Duration = 5 * time.Second
 	c.Producer.RetryLimit = 2

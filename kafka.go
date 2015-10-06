@@ -97,6 +97,7 @@ func (e KhpError) Error() string {
 
 // KafkaClient is batch of brokers
 type KafkaClient struct {
+	ReadTimeout   time.Duration
 	allBrokers    map[int64]*kafka.Broker
 	freeBrokers   chan int64
 	stopReconnect chan int
@@ -117,6 +118,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 	log.Debug("Gona create broker pool = ", settings.Broker.NumConns)
 
 	client := &KafkaClient{
+		ReadTimeout:   settings.Broker.ReadTimeout.Duration,
 		allBrokers:    make(map[int64]*kafka.Broker),
 		freeBrokers:   make(chan int64, settings.Broker.NumConns),
 		stopReconnect: make(chan int, 1),
@@ -200,29 +202,75 @@ func (k *KafkaClient) Broker() (int64, error) {
 	}
 }
 
-// GetOffsetInfo returns newest or oldest offset for partition.
-func (k *KafkaClient) GetOffsetInfo(topic string, partitionID int32, oType int) (offset int64, err error) {
+// GetOffsets returns newest and oldest offsets for partition.
+func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64, error) {
 	brokerID, err := k.Broker()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer func() {
 		k.freeBrokers <- brokerID
 	}()
 
-	for retry := 0; retry < 2; retry++ {
-		switch oType {
-		case KafkaOffsetNewest:
-			offset, err = k.allBrokers[brokerID].OffsetLatest(topic, partitionID)
-		case KafkaOffsetOldest:
-			offset, err = k.allBrokers[brokerID].OffsetEarliest(topic, partitionID)
-		}
-		if _, ok := err.(*proto.KafkaError); !ok {
-			continue
-		}
-		return
+	type offsetInfo struct {
+		result  int64
+		fetcher func(string, int32)(int64, error)
 	}
-	return
+
+	offsets := []offsetInfo{
+		offsetInfo{0, k.allBrokers[brokerID].OffsetLatest},
+		offsetInfo{0, k.allBrokers[brokerID].OffsetEarliest},
+	}
+
+	results := make(chan error, 2)
+	timeout := make(chan struct{})
+
+	if k.ReadTimeout > 0 {
+		timer := time.AfterFunc(k.ReadTimeout, func() { close(timeout) })
+		defer timer.Stop()
+	}
+
+	for i := range offsets {
+		go func(i int) {
+			var goErr error
+
+			for retry := 0; retry < 2; retry++ {
+				select {
+				case <-timeout:
+					return
+				default:
+				}
+
+				offsets[i].result, goErr = offsets[i].fetcher(topic, partitionID)
+
+				if goErr == nil {
+					break
+				}
+
+				if _, ok := goErr.(*proto.KafkaError); ok {
+					break
+				}
+			}
+			results <-goErr
+		}(i)
+	}
+
+	for _ = range offsets {
+		select {
+		case err = <-results:
+			if err != nil {
+				break
+			}
+		case <-timeout:
+			err = KhpError{
+				Errno:   KhpErrorReadTimeout,
+				message: "Read timeout",
+			}
+			break
+		}
+	}
+
+	return offsets[0].result, offsets[1].result, err
 }
 
 // NewConsumer creates a new Consumer.
