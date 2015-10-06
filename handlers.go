@@ -159,19 +159,13 @@ func (s *Server) validRequest(w *HTTPResponse, p *url.Values) bool {
 }
 
 func (s *Server) getOffsets(w *HTTPResponse, topic string, partition int32) (int64, int64, bool) {
-	meta, err := s.fetchMetadata()
-	if err != nil {
-		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
-		return 0, 0, false
-	}
-
-	offsetNewest, err := meta.GetOffsetInfo(topic, partition, KafkaOffsetNewest)
+	offsetNewest, err := s.Client.GetOffsetInfo(topic, partition, KafkaOffsetNewest)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get newest offset: %v", err)
 		return 0, 0, false
 	}
 
-	offsetOldest, err := meta.GetOffsetInfo(topic, partition, KafkaOffsetOldest)
+	offsetOldest, err := s.Client.GetOffsetInfo(topic, partition, KafkaOffsetOldest)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get oldest offset: %v", err)
 		return 0, 0, false

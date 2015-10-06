@@ -200,6 +200,31 @@ func (k *KafkaClient) Broker() (int64, error) {
 	}
 }
 
+// GetOffsetInfo returns newest or oldest offset for partition.
+func (k *KafkaClient) GetOffsetInfo(topic string, partitionID int32, oType int) (offset int64, err error) {
+	brokerID, err := k.Broker()
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		k.freeBrokers <- brokerID
+	}()
+
+	for retry := 0; retry < 2; retry++ {
+		switch oType {
+		case KafkaOffsetNewest:
+			offset, err = k.allBrokers[brokerID].OffsetLatest(topic, partitionID)
+		case KafkaOffsetOldest:
+			offset, err = k.allBrokers[brokerID].OffsetEarliest(topic, partitionID)
+		}
+		if _, ok := err.(*proto.KafkaError); !ok {
+			continue
+		}
+		return
+	}
+	return
+}
+
 // NewConsumer creates a new Consumer.
 func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
 	var err error
@@ -404,30 +429,6 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 	return isr, nil
 }
 
-// GetOffsetInfo returns newest or oldest offset for partition.
-func (m *KafkaMetadata) GetOffsetInfo(topic string, partitionID int32, oType int) (offset int64, err error) {
-	brokerID, err := m.client.Broker()
-	if err != nil {
-		return 0, err
-	}
-	defer func() {
-		m.client.freeBrokers <- brokerID
-	}()
-
-	for retry := 0; retry < 2; retry++ {
-		switch oType {
-		case KafkaOffsetNewest:
-			offset, err = m.client.allBrokers[brokerID].OffsetLatest(topic, partitionID)
-		case KafkaOffsetOldest:
-			offset, err = m.client.allBrokers[brokerID].OffsetEarliest(topic, partitionID)
-		}
-		if _, ok := err.(*proto.KafkaError); !ok {
-			continue
-		}
-		return
-	}
-	return
-}
 
 // KafkaConsumer is a wrapper around kafka.Consumer.
 type KafkaConsumer struct {
