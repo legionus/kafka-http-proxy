@@ -35,6 +35,7 @@ const (
 	_                     = iota
 	KhpErrorNoBrokers int = 1
 	KhpErrorReadTimeout
+	KhpErrorConsumerClosed
 )
 
 type kafkaLogger struct {
@@ -99,8 +100,9 @@ func (e KhpError) Error() string {
 type KafkaClient struct {
 	ReadTimeout   time.Duration
 	allBrokers    map[int64]*kafka.Broker
+	deadBrokers   chan int64
 	freeBrokers   chan int64
-	stopReconnect chan int
+	stopReconnect chan struct{}
 }
 
 // NewClient creates new KafkaClient
@@ -120,8 +122,9 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 	client := &KafkaClient{
 		ReadTimeout:   settings.Broker.ReadTimeout.Duration,
 		allBrokers:    make(map[int64]*kafka.Broker),
+		deadBrokers:   make(chan int64, settings.Broker.NumConns),
 		freeBrokers:   make(chan int64, settings.Broker.NumConns),
-		stopReconnect: make(chan int, 1),
+		stopReconnect: make(chan struct{}),
 	}
 
 	brokerID := int64(0)
@@ -140,37 +143,33 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 
 	if settings.Broker.ReconnectTimeout.Duration > 0 {
 		go func() {
+			var id int64
+			var goErr error
+
 			for {
 				select {
-				case _, ok := <-client.stopReconnect:
-					if ok {
-						break
+				case id = <-client.deadBrokers:
+				case <-time.After(settings.Broker.ReconnectTimeout.Duration):
+					id, goErr = client.Broker()
+					if goErr != nil {
+						continue
 					}
-				default:
+				case <-client.stopReconnect:
+					return
 				}
 
-				time.Sleep(settings.Broker.ReconnectTimeout.Duration)
+				client.allBrokers[id].Close()
 
-				brokerID, err := client.Broker()
-				if err != nil {
-					continue
-				}
-
-				client.allBrokers[brokerID].Close()
-
-				var b *kafka.Broker
 				for {
-					b, err = kafka.Dial(settings.Kafka.Broker, conf)
-					if err == nil {
+					b, goErr := kafka.Dial(settings.Kafka.Broker, conf)
+					if goErr == nil {
+						client.allBrokers[id] = b
+						client.freeBrokers <- id
 						break
 					}
-					conf.Logger.Error("Unable to reconnect", "brokerID", brokerID, "err", err.Error())
+					conf.Logger.Error("Unable to reconnect", "brokerID", id, "err", goErr.Error())
 				}
-
-				client.allBrokers[brokerID] = b
-				client.freeBrokers <- brokerID
-
-				conf.Logger.Info("Connection was reset by schedule", "brokerID", brokerID)
+				conf.Logger.Info("Connection was reset by schedule", "brokerID", id)
 			}
 		}()
 	}
@@ -180,7 +179,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 
 // Close closes all brokers.
 func (k *KafkaClient) Close() error {
-	k.stopReconnect <- 1
+	close(k.stopReconnect)
 	for _, broker := range k.allBrokers {
 		broker.Close()
 	}
@@ -208,13 +207,10 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 	if err != nil {
 		return 0, 0, err
 	}
-	defer func() {
-		k.freeBrokers <- brokerID
-	}()
 
 	type offsetInfo struct {
 		result  int64
-		fetcher func(string, int32)(int64, error)
+		fetcher func(string, int32) (int64, error)
 	}
 
 	offsets := []offsetInfo{
@@ -251,7 +247,7 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 					break
 				}
 			}
-			results <-goErr
+			results <- goErr
 		}(i)
 	}
 
@@ -259,9 +255,11 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 		select {
 		case err = <-results:
 			if err != nil {
+				k.freeBrokers <- brokerID
 				break
 			}
 		case <-timeout:
+			k.deadBrokers <- brokerID
 			err = KhpError{
 				Errno:   KhpErrorReadTimeout,
 				message: "Read timeout",
@@ -477,7 +475,6 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 	return isr, nil
 }
 
-
 // KafkaConsumer is a wrapper around kafka.Consumer.
 type KafkaConsumer struct {
 	client      *KafkaClient
@@ -496,8 +493,25 @@ func (c *KafkaConsumer) Close() error {
 	return nil
 }
 
+// Corrupt marks the connection as a broken.
+func (c *KafkaConsumer) Corrupt() {
+	if !c.opened {
+		return
+	}
+	c.client.deadBrokers <- c.brokerID
+	c.opened = false
+}
+
 // Message returns message from kafka.
 func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
+	if !c.opened {
+		err = KhpError{
+			Errno:   KhpErrorConsumerClosed,
+			message: "Read from closed consumer",
+		}
+		return
+	}
+
 	result := make(chan struct{})
 	timeout := make(chan struct{})
 
@@ -518,6 +532,7 @@ func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
 	case <-result:
 		msg, err = kafkaMsg, kafkaErr
 	case <-timeout:
+		c.Corrupt()
 		err = KhpError{
 			Errno:   KhpErrorReadTimeout,
 			message: "Read timeout",
