@@ -50,6 +50,7 @@ type Config struct {
 		RequestTimeout CfgDuration
 		RetryLimit     int
 		RetryWait      CfgDuration
+		WriteTimeout   CfgDuration
 	}
 	Consumer struct {
 		RequestTimeout   CfgDuration
@@ -90,6 +91,7 @@ func (c *Config) SetDefaults() {
 	c.Producer.RequestTimeout.Duration = 5 * time.Second
 	c.Producer.RetryLimit = 2
 	c.Producer.RetryWait.Duration = 200 * time.Millisecond
+	c.Producer.WriteTimeout.Duration = 500 * time.Millisecond
 
 	c.Consumer.RequestTimeout.Duration = 50 * time.Millisecond
 	c.Consumer.RetryLimit = 2

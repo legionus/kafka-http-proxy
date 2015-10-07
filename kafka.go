@@ -35,6 +35,7 @@ const (
 	_                     = iota
 	KhpErrorNoBrokers int = 1
 	KhpErrorReadTimeout
+	KhpErrorWriteTimeout
 	KhpErrorConsumerClosed
 	KhpErrorProducerClosed
 )
@@ -329,10 +330,11 @@ func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
 	conf.RequiredAcks = proto.RequiredAcksAll
 
 	return &KafkaProducer{
-		client:   k,
-		brokerID: brokerID,
-		producer: k.allBrokers[brokerID].Producer(conf),
-		opened:   true,
+		client:       k,
+		brokerID:     brokerID,
+		producer:     k.allBrokers[brokerID].Producer(conf),
+		opened:       true,
+		WriteTimeout: settings.Producer.WriteTimeout.Duration,
 	}, nil
 }
 
@@ -545,10 +547,11 @@ func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
 
 // KafkaProducer is a wrapper around kafka.Producer.
 type KafkaProducer struct {
-	client   *KafkaClient
-	brokerID int64
-	producer kafka.Producer
-	opened   bool
+	client       *KafkaClient
+	brokerID     int64
+	producer     kafka.Producer
+	opened       bool
+	WriteTimeout time.Duration
 }
 
 // Close frees the connection and returns it to the free pool.
@@ -570,16 +573,42 @@ func (p *KafkaProducer) Corrupt() {
 }
 
 // SendMessage sends message in kafka.
-func (p *KafkaProducer) SendMessage(topic string, partitionID int32, message []byte) (int64, error) {
+func (p *KafkaProducer) SendMessage(topic string, partitionID int32, message []byte) (offset int64, err error) {
 	if !p.opened {
 		err = KhpError{
 			Errno:   KhpErrorProducerClosed,
 			message: "Write to closed producer",
 		}
-		return 0, err
+		return
 	}
 
-	return p.producer.Produce(topic, partitionID, &proto.Message{
-		Value: message,
-	})
+	result := make(chan struct{})
+	timeout := make(chan struct{})
+
+	if p.WriteTimeout > 0 {
+		timer := time.AfterFunc(p.WriteTimeout, func() { close(timeout) })
+		defer timer.Stop()
+	}
+
+	var kafkaOffset int64
+	var kafkaErr error
+
+	go func() {
+		kafkaOffset, kafkaErr = p.producer.Produce(topic, partitionID, &proto.Message{
+			Value: message,
+		})
+		close(result)
+	}()
+
+	select {
+	case <-result:
+		offset, err = kafkaOffset, kafkaErr
+	case <-timeout:
+		p.Corrupt()
+		err = KhpError{
+			Errno:   KhpErrorWriteTimeout,
+			message: "Write timeout",
+		}
+	}
+	return
 }
