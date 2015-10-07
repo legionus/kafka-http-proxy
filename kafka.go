@@ -33,8 +33,8 @@ var (
 )
 
 const (
-	_                     = iota
-	KhpErrorNoBrokers int = 1
+	_ = iota
+	KhpErrorNoBrokers
 	KhpErrorReadTimeout
 	KhpErrorWriteTimeout
 	KhpErrorConsumerClosed
