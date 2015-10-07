@@ -197,7 +197,7 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 
 	kafka.Offset, err = producer.SendMessage(kafka.Topic, kafka.Partition, msg)
 	if err != nil {
-		s.errorResponse(w, http.StatusBadRequest, "Unable to store your data: %v", err)
+		s.errorResponse(w, httpStatusError(err), "Unable to store your data: %v", err)
 		return
 	}
 
