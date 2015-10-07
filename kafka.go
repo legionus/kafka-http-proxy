@@ -36,6 +36,7 @@ const (
 	KhpErrorNoBrokers int = 1
 	KhpErrorReadTimeout
 	KhpErrorConsumerClosed
+	KhpErrorProducerClosed
 )
 
 type kafkaLogger struct {
@@ -331,6 +332,7 @@ func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
 		client:   k,
 		brokerID: brokerID,
 		producer: k.allBrokers[brokerID].Producer(conf),
+		opened:   true,
 	}, nil
 }
 
@@ -546,16 +548,37 @@ type KafkaProducer struct {
 	client   *KafkaClient
 	brokerID int64
 	producer kafka.Producer
+	opened   bool
 }
 
 // Close frees the connection and returns it to the free pool.
 func (p *KafkaProducer) Close() error {
-	p.client.freeBrokers <- p.brokerID
+	if p.opened {
+		p.client.freeBrokers <- p.brokerID
+		p.opened = false
+	}
 	return nil
+}
+
+// Corrupt marks the connection as a broken.
+func (p *KafkaProducer) Corrupt() {
+	if !p.opened {
+		return
+	}
+	p.client.deadBrokers <- p.brokerID
+	p.opened = false
 }
 
 // SendMessage sends message in kafka.
 func (p *KafkaProducer) SendMessage(topic string, partitionID int32, message []byte) (int64, error) {
+	if !p.opened {
+		err = KhpError{
+			Errno:   KhpErrorProducerClosed,
+			message: "Write to closed producer",
+		}
+		return 0, err
+	}
+
 	return p.producer.Produce(topic, partitionID, &proto.Message{
 		Value: message,
 	})
