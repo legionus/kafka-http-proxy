@@ -249,8 +249,8 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 	}
 
 	offsets := []offsetInfo{
-		offsetInfo{0, k.allBrokers[brokerID].OffsetLatest},
 		offsetInfo{0, k.allBrokers[brokerID].OffsetEarliest},
+		offsetInfo{0, k.allBrokers[brokerID].OffsetLatest},
 	}
 
 	results := make(chan error, 2)
