@@ -121,7 +121,7 @@ func (s *Server) validRequest(w *HTTPResponse, p *url.Values) bool {
 		return false
 	}
 
-	meta, err := s.fetchMetadata()
+	meta, err := s.Client.FetchMetadata()
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return false
@@ -371,7 +371,7 @@ ConsumeLoop:
 func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 	res := []responseTopicListInfo{}
 
-	meta, err := s.fetchMetadata()
+	meta, err := s.Client.FetchMetadata()
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
@@ -409,7 +409,7 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 		Partition: toInt32(p.Get("partition")),
 	}
 
-	meta, err := s.fetchMetadata()
+	meta, err := s.Client.FetchMetadata()
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return
@@ -456,7 +456,7 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 
 	res := []responsePartitionInfo{}
 
-	meta, err := s.fetchMetadata()
+	meta, err := s.Client.FetchMetadata()
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get metadata: %v", err)
 		return

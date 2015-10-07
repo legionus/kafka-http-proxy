@@ -25,7 +25,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -96,13 +95,6 @@ type Server struct {
 
 	Stats       *MetricStats
 	MessageSize *TopicMessageSize
-
-	Cache struct {
-		sync.RWMutex
-
-		lastMetadata       *KafkaMetadata
-		lastUpdateMetadata int64
-	}
 }
 
 // Close closes the server.
@@ -218,35 +210,6 @@ func (s *Server) errorOutOfRange(w *HTTPResponse, topic string, partition int32,
 	s.beginResponse(w, status)
 	w.Write(b)
 	s.endResponseError(w)
-}
-
-func (s *Server) fetchMetadata() (*KafkaMetadata, error) {
-	s.Cache.Lock()
-	defer s.Cache.Unlock()
-
-	now := time.Now().UnixNano()
-
-	if s.Cfg.Metadata.CacheTimeout.Duration > 0 {
-		period := now - s.Cache.lastUpdateMetadata
-
-		if period < 0 {
-			period = -period
-		}
-
-		if period < int64(s.Cfg.Metadata.CacheTimeout.Duration) {
-			return s.Cache.lastMetadata, nil
-		}
-	}
-
-	meta, err := s.Client.GetMetadata()
-	if err != nil {
-		return nil, err
-	}
-
-	s.Cache.lastUpdateMetadata = now
-	s.Cache.lastMetadata = meta
-
-	return meta, nil
 }
 
 func (s *Server) initStatistics() {

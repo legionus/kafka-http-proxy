@@ -14,6 +14,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -100,11 +101,20 @@ func (e KhpError) Error() string {
 
 // KafkaClient is batch of brokers
 type KafkaClient struct {
-	ReadTimeout   time.Duration
+	CacheTimeout time.Duration
+	ReadTimeout  time.Duration
+
 	allBrokers    map[int64]*kafka.Broker
 	deadBrokers   chan int64
 	freeBrokers   chan int64
 	stopReconnect chan struct{}
+
+	cache struct {
+		sync.RWMutex
+
+		lastMetadata       *KafkaMetadata
+		lastUpdateMetadata int64
+	}
 }
 
 // NewClient creates new KafkaClient
@@ -122,6 +132,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 	log.Debug("Gona create broker pool = ", settings.Broker.NumConns)
 
 	client := &KafkaClient{
+		CacheTimeout:  settings.Metadata.CacheTimeout.Duration,
 		ReadTimeout:   settings.Broker.ReadTimeout.Duration,
 		allBrokers:    make(map[int64]*kafka.Broker),
 		deadBrokers:   make(chan int64, settings.Broker.NumConns),
@@ -141,6 +152,28 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		client.allBrokers[brokerID] = b
 		client.freeBrokers <- brokerID
 		brokerID++
+	}
+
+	if settings.Metadata.CacheTimeout.Duration > 0 {
+		go func() {
+			for {
+				select {
+				case <-time.After(settings.Metadata.CacheTimeout.Duration):
+				case <-client.stopReconnect:
+					return
+				}
+
+				meta, err := client.GetMetadata()
+				if err != nil {
+					continue
+				}
+
+				client.cache.Lock()
+				client.cache.lastMetadata = meta
+				client.cache.lastUpdateMetadata = time.Now().UnixNano()
+				client.cache.Unlock()
+			}
+		}()
 	}
 
 	if settings.Broker.ReconnectTimeout.Duration > 0 {
@@ -358,6 +391,26 @@ func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
 		return nil, err
 	}
 	return meta, nil
+}
+
+// FetchMetadata returns metadata from kafka but use internal cache.
+func (k *KafkaClient) FetchMetadata() (*KafkaMetadata, error) {
+	k.cache.RLock()
+	defer k.cache.RUnlock()
+
+	if k.CacheTimeout > 0 && k.cache.lastUpdateMetadata > 0 {
+		period := time.Now().UnixNano() - k.cache.lastUpdateMetadata
+
+		if period < 0 {
+			period = -period
+		}
+
+		if period < int64(k.CacheTimeout) {
+			return k.cache.lastMetadata, nil
+		}
+	}
+
+	return k.GetMetadata()
 }
 
 // KafkaMetadata is a wrapper around metadata response
