@@ -37,6 +37,7 @@ type Config struct {
 	}
 	Metadata struct {
 		CacheTimeout CfgDuration
+		ReadTimeout  CfgDuration
 	}
 	Broker struct {
 		NumConns         int64
@@ -80,6 +81,7 @@ func (c *Config) SetDefaults() {
 	c.Global.Pidfile = "/run/kafka-http-proxy.pid"
 
 	c.Metadata.CacheTimeout.Duration = 3 * time.Second
+	c.Metadata.ReadTimeout.Duration = 500 * time.Millisecond
 
 	c.Broker.NumConns = 100
 	c.Broker.DialTimeout.Duration = 500 * time.Millisecond

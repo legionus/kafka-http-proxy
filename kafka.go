@@ -39,6 +39,7 @@ const (
 	KhpErrorWriteTimeout
 	KhpErrorConsumerClosed
 	KhpErrorProducerClosed
+	KhpErrorMetadataReadTimeout
 )
 
 type kafkaLogger struct {
@@ -101,8 +102,9 @@ func (e KhpError) Error() string {
 
 // KafkaClient is batch of brokers
 type KafkaClient struct {
-	CacheTimeout time.Duration
-	ReadTimeout  time.Duration
+	MetadataReadTimeout time.Duration
+	CacheTimeout        time.Duration
+	ReadTimeout         time.Duration
 
 	allBrokers    map[int64]*kafka.Broker
 	deadBrokers   chan int64
@@ -132,12 +134,13 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 	log.Debug("Gona create broker pool = ", settings.Broker.NumConns)
 
 	client := &KafkaClient{
-		CacheTimeout:  settings.Metadata.CacheTimeout.Duration,
-		ReadTimeout:   settings.Broker.ReadTimeout.Duration,
-		allBrokers:    make(map[int64]*kafka.Broker),
-		deadBrokers:   make(chan int64, settings.Broker.NumConns),
-		freeBrokers:   make(chan int64, settings.Broker.NumConns),
-		stopReconnect: make(chan struct{}),
+		MetadataReadTimeout: settings.Metadata.ReadTimeout.Duration,
+		CacheTimeout:        settings.Metadata.CacheTimeout.Duration,
+		ReadTimeout:         settings.Broker.ReadTimeout.Duration,
+		allBrokers:          make(map[int64]*kafka.Broker),
+		deadBrokers:         make(chan int64, settings.Broker.NumConns),
+		freeBrokers:         make(chan int64, settings.Broker.NumConns),
+		stopReconnect:       make(chan struct{}),
 	}
 
 	brokerID := int64(0)
@@ -165,6 +168,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 
 				meta, err := client.GetMetadata()
 				if err != nil {
+					conf.Logger.Error("Unable to fetch metadata", "err", err.Error())
 					continue
 				}
 
@@ -372,25 +376,42 @@ func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
 }
 
 // GetMetadata returns metadata from kafka.
-func (k *KafkaClient) GetMetadata() (*KafkaMetadata, error) {
-	var err error
-
+func (k *KafkaClient) GetMetadata() (meta *KafkaMetadata, err error) {
 	brokerID, err := k.Broker()
 	if err != nil {
 		return nil, err
 	}
 
-	meta := &KafkaMetadata{
+	result := make(chan struct{})
+	timeout := make(chan struct{})
+
+	if k.MetadataReadTimeout > 0 {
+		timer := time.AfterFunc(k.MetadataReadTimeout, func() { close(timeout) })
+		defer timer.Stop()
+	}
+
+	var kafkaErr error
+	meta = &KafkaMetadata{
 		client: k,
 	}
-	meta.Metadata, err = k.allBrokers[brokerID].Metadata()
 
-	k.freeBrokers <- brokerID
+	go func() {
+		meta.Metadata, kafkaErr = k.allBrokers[brokerID].Metadata()
+		close(result)
+	}()
 
-	if err != nil {
-		return nil, err
+	select {
+	case <-result:
+		k.freeBrokers <- brokerID
+		err = kafkaErr
+	case <-timeout:
+		k.deadBrokers <- brokerID
+		err = KhpError{
+			Errno:   KhpErrorMetadataReadTimeout,
+			message: "Read timeout",
+		}
 	}
-	return meta, nil
+	return
 }
 
 // FetchMetadata returns metadata from kafka but use internal cache.
