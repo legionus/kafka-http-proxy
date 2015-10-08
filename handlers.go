@@ -61,7 +61,7 @@ func (s *Server) rootHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
     <div class="container"><h2>Kafka API v1</h2><br>
         <table class="table">
           <tr>
-            <th class="text-right">Write to Kafka</p></th>
+            <th class="text-right">Write to Kafka</th>
             <td>POST</td>
             <td><code>{schema}://{host}/v1/topics/{topic}/{partition}</code></td>
           </tr>
