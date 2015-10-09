@@ -1,3 +1,12 @@
+kafka-http-proxy (0.6.2) unstable; urgency=low
+
+  * Add WriteTimeout to SendMessage.
+  * Add ReadTimeout to GetOffsets.
+  * Add ReadTimeout to GetMetadata.
+  * Add pool of dead brokers.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Fri, 09 Oct 2015 15:22:20 +0300
+
 kafka-http-proxy (0.6.1) unstable; urgency=low
 
   * Stream messages in json format.
