@@ -153,7 +153,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		}
 
 		client.allBrokers[brokerID] = b
-		client.freeBrokers <- brokerID
+		client.freeBroker(brokerID)
 		brokerID++
 	}
 
@@ -176,42 +176,52 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 				client.cache.lastMetadata = meta
 				client.cache.lastUpdateMetadata = time.Now().UnixNano()
 				client.cache.Unlock()
+
+				conf.Logger.Info("Got new metadata by schedule")
 			}
 		}()
 	}
 
 	if settings.Broker.ReconnectTimeout.Duration > 0 {
 		go func() {
-			var id int64
-			var goErr error
-
 			for {
 				select {
-				case id = <-client.deadBrokers:
 				case <-time.After(settings.Broker.ReconnectTimeout.Duration):
-					id, goErr = client.Broker()
-					if goErr != nil {
-						continue
+					if id, goErr := client.getBroker(); goErr == nil {
+						client.deadBroker(id)
 					}
 				case <-client.stopReconnect:
 					return
 				}
+			}
+		}()
+	}
 
+	go func() {
+		var id int64
+
+		for {
+			select {
+			case id = <-client.deadBrokers:
+			case <-client.stopReconnect:
+				return
+			}
+
+			go func(id int64) {
 				client.allBrokers[id].Close()
-
 				for {
 					b, goErr := kafka.Dial(settings.Kafka.Broker, conf)
 					if goErr == nil {
 						client.allBrokers[id] = b
-						client.freeBrokers <- id
+						client.freeBroker(id)
 						break
 					}
 					conf.Logger.Error("Unable to reconnect", "brokerID", id, "err", goErr.Error())
 				}
-				conf.Logger.Info("Connection was reset by schedule", "brokerID", id)
-			}
-		}()
-	}
+				conf.Logger.Info("Connection was reset", "brokerID", id)
+			}(id)
+		}
+	}()
 
 	return client, nil
 }
@@ -226,7 +236,7 @@ func (k *KafkaClient) Close() error {
 }
 
 // Broker returns first availiable broker or error.
-func (k *KafkaClient) Broker() (int64, error) {
+func (k *KafkaClient) getBroker() (int64, error) {
 	select {
 	case brokerID, ok := <-k.freeBrokers:
 		if ok {
@@ -240,9 +250,17 @@ func (k *KafkaClient) Broker() (int64, error) {
 	}
 }
 
+func (k *KafkaClient) freeBroker(brokerID int64) {
+	k.freeBrokers <- brokerID
+}
+
+func (k *KafkaClient) deadBroker(brokerID int64) {
+	k.deadBrokers <- brokerID
+}
+
 // GetOffsets returns newest and oldest offsets for partition.
 func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64, error) {
-	brokerID, err := k.Broker()
+	brokerID, err := k.getBroker()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -290,21 +308,28 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 		}(i)
 	}
 
+	isTimeout := false
+
 	for _ = range offsets {
 		select {
 		case err = <-results:
 			if err != nil {
-				k.freeBrokers <- brokerID
 				break
 			}
 		case <-timeout:
-			k.deadBrokers <- brokerID
+			isTimeout = true
 			err = KhpError{
 				Errno:   KhpErrorReadTimeout,
 				message: "Read timeout",
 			}
 			break
 		}
+	}
+
+	if isTimeout {
+		k.deadBroker(brokerID)
+	} else {
+		k.freeBroker(brokerID)
 	}
 
 	return offsets[0].result, offsets[1].result, err
@@ -314,7 +339,7 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
 	var err error
 
-	brokerID, err := k.Broker()
+	brokerID, err := k.getBroker()
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +361,7 @@ func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID in
 
 	consumer, err := k.allBrokers[brokerID].Consumer(conf)
 	if err != nil {
-		k.freeBrokers <- brokerID
+		k.freeBroker(brokerID)
 		return nil, err
 	}
 
@@ -350,7 +375,7 @@ func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID in
 
 // NewProducer creates a new Producer.
 func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
-	brokerID, err := k.Broker()
+	brokerID, err := k.getBroker()
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +402,7 @@ func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
 
 // GetMetadata returns metadata from kafka.
 func (k *KafkaClient) GetMetadata() (meta *KafkaMetadata, err error) {
-	brokerID, err := k.Broker()
+	brokerID, err := k.getBroker()
 	if err != nil {
 		return nil, err
 	}
@@ -402,10 +427,10 @@ func (k *KafkaClient) GetMetadata() (meta *KafkaMetadata, err error) {
 
 	select {
 	case <-result:
-		k.freeBrokers <- brokerID
+		k.freeBroker(brokerID)
 		err = kafkaErr
 	case <-timeout:
-		k.deadBrokers <- brokerID
+		k.deadBroker(brokerID)
 		err = KhpError{
 			Errno:   KhpErrorMetadataReadTimeout,
 			message: "Read timeout",
@@ -565,7 +590,7 @@ type KafkaConsumer struct {
 // Close frees the connection and returns it to the free pool.
 func (c *KafkaConsumer) Close() error {
 	if c.opened {
-		c.client.freeBrokers <- c.brokerID
+		c.client.freeBroker(c.brokerID)
 		c.opened = false
 	}
 	return nil
@@ -576,7 +601,7 @@ func (c *KafkaConsumer) Corrupt() {
 	if !c.opened {
 		return
 	}
-	c.client.deadBrokers <- c.brokerID
+	c.client.deadBroker(c.brokerID)
 	c.opened = false
 }
 
@@ -631,7 +656,7 @@ type KafkaProducer struct {
 // Close frees the connection and returns it to the free pool.
 func (p *KafkaProducer) Close() error {
 	if p.opened {
-		p.client.freeBrokers <- p.brokerID
+		p.client.freeBroker(p.brokerID)
 		p.opened = false
 	}
 	return nil
@@ -642,7 +667,7 @@ func (p *KafkaProducer) Corrupt() {
 	if !p.opened {
 		return
 	}
-	p.client.deadBrokers <- p.brokerID
+	p.client.deadBroker(p.brokerID)
 	p.opened = false
 }
 
