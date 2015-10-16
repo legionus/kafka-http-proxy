@@ -117,6 +117,8 @@ type KafkaClient struct {
 		lastMetadata       *KafkaMetadata
 		lastUpdateMetadata int64
 	}
+
+	Timings map[string]*ResponseTimer
 }
 
 // NewClient creates new KafkaClient
@@ -137,6 +139,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		MetadataReadTimeout: settings.Metadata.ReadTimeout.Duration,
 		CacheTimeout:        settings.Metadata.CacheTimeout.Duration,
 		ReadTimeout:         settings.Broker.ReadTimeout.Duration,
+		Timings:             NewTimings(600, []string{"GetMetadata","GetOffsets","GetMessage","SendMessage"}),
 		allBrokers:          make(map[int64]*kafka.Broker),
 		deadBrokers:         make(chan int64, settings.Broker.NumConns),
 		freeBrokers:         make(chan int64, settings.Broker.NumConns),
@@ -264,6 +267,8 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 	if err != nil {
 		return 0, 0, err
 	}
+
+	defer k.Timings["GetOffsets"].Start().Stop()
 
 	type offsetInfo struct {
 		result  int64
@@ -406,6 +411,8 @@ func (k *KafkaClient) GetMetadata() (meta *KafkaMetadata, err error) {
 	if err != nil {
 		return nil, err
 	}
+
+	defer k.Timings["GetMetadata"].Start().Stop()
 
 	result := make(chan struct{})
 	timeout := make(chan struct{})
@@ -615,6 +622,8 @@ func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
 		return
 	}
 
+	defer c.client.Timings["GetMessage"].Start().Stop()
+
 	result := make(chan struct{})
 	timeout := make(chan struct{})
 
@@ -680,6 +689,8 @@ func (p *KafkaProducer) SendMessage(topic string, partitionID int32, message []b
 		}
 		return
 	}
+
+	defer p.client.Timings["SendMessage"].Start().Stop()
 
 	result := make(chan struct{})
 	timeout := make(chan struct{})

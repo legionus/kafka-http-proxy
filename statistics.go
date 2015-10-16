@@ -15,56 +15,73 @@ import (
 	"syscall"
 )
 
+// ResponseTimer is wrapper around a decaying simple moving average.
+type ResponseTimer struct {
+	Size   int
+	MA     *CMA
+}
+
+// CaptureTimer is helper to update ResponseTimer.
+type CaptureTimer struct {
+	timer ResponseTimer
+	start time.Time
+}
+
+// Stop writes the elapsed time.
+func (c *CaptureTimer) Stop() {
+	n := int64(time.Since(c.start) / time.Millisecond)
+	c.timer.Add(n)
+}
+
+// NewResponseTimer creates new ResponseTimer.
+func NewResponseTimer(size int) (*ResponseTimer) {
+	return &ResponseTimer{
+		Size:   size,
+		MA:     NewCMA(size),
+	}
+}
+
+// Start captures the current time.
+func (t ResponseTimer) Start() (*CaptureTimer) {
+	return &CaptureTimer{
+		timer: t,
+		start: time.Now(),
+	}
+}
+
+// Add appends new value to set.
+func (t ResponseTimer) Add(n int64) {
+	t.MA.Add(n)
+}
+
+// SnapshotTimer is a snapshot of the ResponseTimer values.
+type SnapshotTimer struct {
+	Max int64
+	Min int64
+	Avg float64
+	Count int
+}
+
+// GetSnapshot creates a snapshot of the ResponseTimer values.
+func (t ResponseTimer) GetSnapshot() (res *SnapshotTimer) {
+	res = &SnapshotTimer{}
+	res.Count = t.MA.Count()
+	res.Avg = t.MA.Mean()
+	res.Min, res.Max = t.MA.MinMax()
+	return
+}
+
 // MetricStats contains statistics about HTTP responses.
 type MetricStats struct {
-	ResponsePostTime metrics.Timer
-	ResponseGetTime  metrics.Timer
 	HTTPStatus       map[int]metrics.Counter
+	HTTPResponseTime map[string]*ResponseTimer
 }
 
 // NewMetricStats creates new MetricStats object.
 func NewMetricStats() *MetricStats {
-	m := &MetricStats{
-		ResponsePostTime: metrics.NewTimer(),
-		ResponseGetTime:  metrics.NewTimer(),
+	return &MetricStats{
 		HTTPStatus:       NewHTTPStatus([]int{200, 400, 404, 405, 416, 500, 502, 503}),
-	}
-
-	go func() {
-		for {
-			m.ResponseGetTime.Tick()
-			m.ResponsePostTime.Tick()
-			time.Sleep(metrics.TickDuration)
-		}
-	}()
-
-	return m
-}
-
-// StatTimer contains metrics.Timer snapshot.
-type StatTimer struct {
-	Min   int64
-	Max   int64
-	Avg   float64
-	Count int64
-
-	Rate1   float64
-	Rate5   float64
-	Rate15  float64
-	RateAvg float64
-}
-
-// GetTimerStat creates new StatTimer by metrics.Timer.
-func GetTimerStat(s metrics.Timer) *StatTimer {
-	return &StatTimer{
-		Min:     s.Min(),
-		Max:     s.Max(),
-		Avg:     s.Mean(),
-		Count:   s.Count(),
-		Rate1:   s.Rate1(),
-		Rate5:   s.Rate5(),
-		Rate15:  s.Rate15(),
-		RateAvg: s.RateMean(),
+		HTTPResponseTime: NewTimings(600, []string{"GET","POST","GetTopicList","GetTopicInfo","GetPartitionInfo"}),
 	}
 }
 
@@ -109,4 +126,14 @@ func NewHTTPStatus(codes []int) map[int]metrics.Counter {
 		HTTPStatus[code] = metrics.NewCounter()
 	}
 	return HTTPStatus
+}
+
+func NewTimings(size int, names []string) map[string]*ResponseTimer {
+	res := make(map[string]*ResponseTimer)
+
+	for _, name := range names {
+		res[name] = NewResponseTimer(size)
+	}
+
+	return res
 }

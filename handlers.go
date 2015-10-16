@@ -159,7 +159,7 @@ func (s *Server) validRequest(w *HTTPResponse, p *url.Values) bool {
 }
 
 func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
-	defer s.Stats.ResponsePostTime.Start().Stop()
+	defer s.Stats.HTTPResponseTime["POST"].Start().Stop()
 
 	kafka := &kafkaParameters{
 		Topic:     p.Get("topic"),
@@ -206,7 +206,7 @@ func (s *Server) sendHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
 }
 
 func (s *Server) getHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
-	defer s.Stats.ResponseGetTime.Start().Stop()
+	defer s.Stats.HTTPResponseTime["GET"].Start().Stop()
 
 	var (
 		varsLength   string
@@ -369,6 +369,8 @@ ConsumeLoop:
 }
 
 func (s *Server) getTopicListHandler(w *HTTPResponse, r *http.Request, p *url.Values) {
+	defer s.Stats.HTTPResponseTime["GetTopicList"].Start().Stop()
+
 	res := []responseTopicListInfo{}
 
 	meta, err := s.Client.FetchMetadata()
@@ -403,6 +405,8 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 	if !s.validRequest(w, p) {
 		return
 	}
+
+	defer s.Stats.HTTPResponseTime["GetPartitionInfo"].Start().Stop()
 
 	res := &responsePartitionInfo{
 		Topic:     p.Get("topic"),
@@ -453,6 +457,8 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 	if !s.validRequest(w, p) {
 		return
 	}
+
+	defer s.Stats.HTTPResponseTime["GetTopicInfo"].Start().Stop()
 
 	res := []responsePartitionInfo{}
 

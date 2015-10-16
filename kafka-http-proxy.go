@@ -223,10 +223,16 @@ func (s *Server) initStatistics() {
 
 		result["MessageSize"] = msgSize
 
-		timeStats := make(map[string]*StatTimer)
-		timeStats["GET"] = GetTimerStat(s.Stats.ResponseGetTime)
-		timeStats["POST"] = GetTimerStat(s.Stats.ResponsePostTime)
+		kafkaStats := make(map[string]*SnapshotTimer)
+		for name, metric := range s.Client.Timings {
+			kafkaStats[name] = metric.GetSnapshot()
+		}
+		result["Timings"] = kafkaStats
 
+		timeStats := make(map[string]*SnapshotTimer)
+		for name, metric := range s.Stats.HTTPResponseTime {
+			timeStats[name] = metric.GetSnapshot()
+		}
 		result["Response"] = timeStats
 
 		httpStatus := make(map[string]int64)

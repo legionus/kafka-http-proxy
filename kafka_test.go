@@ -61,14 +61,14 @@ func TestGetBroker(t *testing.T) {
 		t.Fatalf("unable to make client: %s", err)
 	}
 
-	if _, err := kafkaClient.Broker(); err != nil {
+	if _, err := kafkaClient.getBroker(); err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
-	if _, err := kafkaClient.Broker(); err != nil {
+	if _, err := kafkaClient.getBroker(); err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	_, err = kafkaClient.Broker()
+	_, err = kafkaClient.getBroker()
 	if err == nil {
 		t.Fatalf("got broker, but shouldn't have")
 	}
