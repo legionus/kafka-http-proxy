@@ -434,7 +434,7 @@ func (s *Server) getPartitionInfoHandler(w *HTTPResponse, r *http.Request, p *ur
 	}
 	res.ReplicasNum = len(res.Replicas)
 
-	res.OffsetNewest, res.OffsetOldest, err = s.Client.GetOffsets(res.Topic, res.Partition)
+	res.OffsetOldest, res.OffsetNewest, err = s.Client.GetOffsets(res.Topic, res.Partition)
 	if err != nil {
 		s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 		return
@@ -506,7 +506,7 @@ func (s *Server) getTopicInfoHandler(w *HTTPResponse, r *http.Request, p *url.Va
 		}
 		r.ReplicasNum = len(r.Replicas)
 
-		r.OffsetNewest, r.OffsetOldest, err = s.Client.GetOffsets(r.Topic, r.Partition)
+		r.OffsetOldest, r.OffsetNewest, err = s.Client.GetOffsets(r.Topic, r.Partition)
 		if err != nil {
 			s.errorResponse(w, httpStatusError(err), "Unable to get offset: %v", err)
 			return

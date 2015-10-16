@@ -263,7 +263,7 @@ func (k *KafkaClient) deadBroker(brokerID int64) {
 	k.deadBrokers <- brokerID
 }
 
-// GetOffsets returns newest and oldest offsets for partition.
+// GetOffsets returns oldest and newest offsets for partition.
 func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64, error) {
 	brokerID, err := k.getBroker()
 	if err != nil {
