@@ -1,3 +1,9 @@
+kafka-http-proxy (0.6.4) unstable; urgency=low
+
+  * Fix GetOffsets usage.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Fri, 16 Oct 2015 16:34:36 +0300
+
 kafka-http-proxy (0.6.3) unstable; urgency=low
 
   * Add statistic for kafka response.
