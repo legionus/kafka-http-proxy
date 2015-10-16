@@ -8,8 +8,7 @@
 package main
 
 import (
-	"code.google.com/p/gcfg"
-
+	cfg "gopkg.in/gcfg.v1"
 	log "github.com/Sirupsen/logrus"
 	_ "net/http/pprof"
 
@@ -406,11 +405,11 @@ func toInt64(s string) int64 {
 func main() {
 	flag.Parse()
 
-	cfg := &Config{}
-	cfg.SetDefaults()
+	srvConfig := &Config{}
+	srvConfig.SetDefaults()
 
 	if *config != "" {
-		err := gcfg.ReadFileInto(cfg, *config)
+		err := cfg.ReadFileInto(srvConfig, *config)
 		if err != nil {
 			fmt.Println("Bad config:", err.Error())
 			os.Exit(1)
@@ -418,23 +417,23 @@ func main() {
 	}
 
 	if *verbose {
-		cfg.Global.Verbose = true
+		srvConfig.Global.Verbose = true
 	}
 
 	if *addr != "" {
-		cfg.Global.Address = *addr
+		srvConfig.Global.Address = *addr
 	}
 
 	if *brokers != "" {
-		cfg.Kafka.Broker = strings.Split(*brokers, ",")
+		srvConfig.Kafka.Broker = strings.Split(*brokers, ",")
 	}
 
-	if cfg.Global.Address == "" {
+	if srvConfig.Global.Address == "" {
 		fmt.Println("Address required")
 		os.Exit(1)
 	}
 
-	if len(cfg.Kafka.Broker) == 0 {
+	if len(srvConfig.Kafka.Broker) == 0 {
 		fmt.Println("Kafka brokers required")
 		os.Exit(1)
 	}
@@ -444,18 +443,18 @@ func main() {
 	}
 
 	log.SetLevel(log.InfoLevel)
-	if cfg.Global.Verbose {
+	if srvConfig.Global.Verbose {
 		log.SetLevel(log.DebugLevel)
 	}
 
 	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp:    cfg.Logging.FullTimestamp,
-		DisableTimestamp: cfg.Logging.DisableTimestamp,
-		DisableColors:    cfg.Logging.DisableColors,
-		DisableSorting:   cfg.Logging.DisableSorting,
+		FullTimestamp:    srvConfig.Logging.FullTimestamp,
+		DisableTimestamp: srvConfig.Logging.DisableTimestamp,
+		DisableColors:    srvConfig.Logging.DisableColors,
+		DisableSorting:   srvConfig.Logging.DisableSorting,
 	})
 
-	pidfile, err := OpenPidfile(cfg.Global.Pidfile)
+	pidfile, err := OpenPidfile(srvConfig.Global.Pidfile)
 	if err != nil {
 		log.Fatal("Unable to open pidfile: ", err.Error())
 	}
@@ -469,21 +468,21 @@ func main() {
 		log.Fatal("Unable to write pidfile: ", err.Error())
 	}
 
-	logfile, err := OpenLogfile(cfg.Global.Logfile)
+	logfile, err := OpenLogfile(srvConfig.Global.Logfile)
 	if err != nil {
 		log.Fatal("Unable to open log: ", err.Error())
 	}
 	defer logfile.Close()
 	log.SetOutput(logfile)
 
-	if cfg.Global.GoMaxProcs == 0 {
-		cfg.Global.GoMaxProcs = runtime.NumCPU()
+	if srvConfig.Global.GoMaxProcs == 0 {
+		srvConfig.Global.GoMaxProcs = runtime.NumCPU()
 	}
-	runtime.GOMAXPROCS(cfg.Global.GoMaxProcs)
+	runtime.GOMAXPROCS(srvConfig.Global.GoMaxProcs)
 
 	var kafkaClient *KafkaClient
 	for {
-		kafkaClient, err = NewClient(cfg)
+		kafkaClient, err = NewClient(srvConfig)
 		if err == nil {
 			break
 		}
@@ -503,7 +502,7 @@ func main() {
 	}()
 
 	server := &Server{
-		Cfg:         cfg,
+		Cfg:         srvConfig,
 		Pidfile:     pidfile,
 		Client:      kafkaClient,
 		Stats:       NewMetricStats(),
