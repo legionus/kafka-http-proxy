@@ -1,3 +1,11 @@
+kafka-http-proxy (0.6.3) unstable; urgency=low
+
+  * Add statistic for kafka response.
+  * Rename config options.
+  * Increase default values for timeouts.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Fri, 16 Oct 2015 15:02:41 +0300
+
 kafka-http-proxy (0.6.2) unstable; urgency=low
 
   * Add WriteTimeout to SendMessage.
