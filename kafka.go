@@ -102,9 +102,10 @@ func (e KhpError) Error() string {
 
 // KafkaClient is batch of brokers
 type KafkaClient struct {
-	MetadataReadTimeout time.Duration
-	CacheTimeout        time.Duration
-	ReadTimeout         time.Duration
+	GetMetadataTimeout  time.Duration
+	MetadataCachePeriod time.Duration
+	GetOffsetsTimeout   time.Duration
+	ReconnectPeriod     time.Duration
 
 	allBrokers    map[int64]*kafka.Broker
 	deadBrokers   chan int64
@@ -136,14 +137,15 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 	log.Debug("Gona create broker pool = ", settings.Broker.NumConns)
 
 	client := &KafkaClient{
-		MetadataReadTimeout: settings.Metadata.ReadTimeout.Duration,
-		CacheTimeout:        settings.Metadata.CacheTimeout.Duration,
-		ReadTimeout:         settings.Broker.ReadTimeout.Duration,
-		Timings:             NewTimings(600, []string{"GetMetadata","GetOffsets","GetMessage","SendMessage"}),
-		allBrokers:          make(map[int64]*kafka.Broker),
-		deadBrokers:         make(chan int64, settings.Broker.NumConns),
-		freeBrokers:         make(chan int64, settings.Broker.NumConns),
-		stopReconnect:       make(chan struct{}),
+		GetMetadataTimeout:   settings.Broker.GetMetadataTimeout.Duration,
+		MetadataCachePeriod:  settings.Broker.MetadataCachePeriod.Duration,
+		GetOffsetsTimeout:    settings.Broker.GetOffsetsTimeout.Duration,
+		ReconnectPeriod:      settings.Broker.ReconnectPeriod.Duration,
+		Timings:              NewTimings(600, []string{"GetMetadata","GetOffsets","GetMessage","SendMessage"}),
+		allBrokers:           make(map[int64]*kafka.Broker),
+		deadBrokers:          make(chan int64, settings.Broker.NumConns),
+		freeBrokers:          make(chan int64, settings.Broker.NumConns),
+		stopReconnect:        make(chan struct{}),
 	}
 
 	brokerID := int64(0)
@@ -160,11 +162,11 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		brokerID++
 	}
 
-	if settings.Metadata.CacheTimeout.Duration > 0 {
+	if client.MetadataCachePeriod > 0 {
 		go func() {
 			for {
 				select {
-				case <-time.After(settings.Metadata.CacheTimeout.Duration):
+				case <-time.After(client.MetadataCachePeriod):
 				case <-client.stopReconnect:
 					return
 				}
@@ -185,11 +187,11 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		}()
 	}
 
-	if settings.Broker.ReconnectTimeout.Duration > 0 {
+	if client.ReconnectPeriod > 0 {
 		go func() {
 			for {
 				select {
-				case <-time.After(settings.Broker.ReconnectTimeout.Duration):
+				case <-time.After(client.ReconnectPeriod):
 					if id, goErr := client.getBroker(); goErr == nil {
 						client.deadBroker(id)
 					}
@@ -283,8 +285,8 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 	results := make(chan error, 2)
 	timeout := make(chan struct{})
 
-	if k.ReadTimeout > 0 {
-		timer := time.AfterFunc(k.ReadTimeout, func() { close(timeout) })
+	if k.GetOffsetsTimeout > 0 {
+		timer := time.AfterFunc(k.GetOffsetsTimeout, func() { close(timeout) })
 		defer timer.Stop()
 	}
 
@@ -340,69 +342,10 @@ func (k *KafkaClient) GetOffsets(topic string, partitionID int32) (int64, int64,
 	return offsets[0].result, offsets[1].result, err
 }
 
-// NewConsumer creates a new Consumer.
-func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
-	var err error
-
-	brokerID, err := k.getBroker()
-	if err != nil {
-		return nil, err
-	}
-
-	conf := kafka.NewConsumerConf(topic, partitionID)
-
-	conf.Logger = &kafkaLogger{
-		subsys: "kafka/consumer",
-	}
-
-	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
-	conf.RetryLimit = settings.Consumer.RetryLimit
-	conf.RetryWait = settings.Consumer.RetryWait.Duration
-	conf.RetryErrLimit = settings.Consumer.RetryErrLimit
-	conf.RetryErrWait = settings.Consumer.RetryErrWait.Duration
-	conf.MinFetchSize = settings.Consumer.MinFetchSize
-	conf.MaxFetchSize = settings.Consumer.MaxFetchSize
-	conf.StartOffset = offset
-
-	consumer, err := k.allBrokers[brokerID].Consumer(conf)
-	if err != nil {
-		k.freeBroker(brokerID)
-		return nil, err
-	}
-
-	return &KafkaConsumer{
-		client:   k,
-		brokerID: brokerID,
-		consumer: consumer,
-		opened:   true,
-	}, nil
-}
-
-// NewProducer creates a new Producer.
-func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
-	brokerID, err := k.getBroker()
-	if err != nil {
-		return nil, err
-	}
-
-	conf := kafka.NewProducerConf()
-
-	conf.Logger = &kafkaLogger{
-		subsys: "kafka/producer",
-	}
-
-	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration
-	conf.RetryLimit = settings.Producer.RetryLimit
-	conf.RetryWait = settings.Producer.RetryWait.Duration
-	conf.RequiredAcks = proto.RequiredAcksAll
-
-	return &KafkaProducer{
-		client:       k,
-		brokerID:     brokerID,
-		producer:     k.allBrokers[brokerID].Producer(conf),
-		opened:       true,
-		WriteTimeout: settings.Producer.WriteTimeout.Duration,
-	}, nil
+// KafkaMetadata is a wrapper around metadata response
+type KafkaMetadata struct {
+	client   *KafkaClient
+	Metadata *proto.MetadataResp
 }
 
 // GetMetadata returns metadata from kafka.
@@ -417,8 +360,8 @@ func (k *KafkaClient) GetMetadata() (meta *KafkaMetadata, err error) {
 	result := make(chan struct{})
 	timeout := make(chan struct{})
 
-	if k.MetadataReadTimeout > 0 {
-		timer := time.AfterFunc(k.MetadataReadTimeout, func() { close(timeout) })
+	if k.GetMetadataTimeout > 0 {
+		timer := time.AfterFunc(k.GetMetadataTimeout, func() { close(timeout) })
 		defer timer.Stop()
 	}
 
@@ -451,25 +394,19 @@ func (k *KafkaClient) FetchMetadata() (*KafkaMetadata, error) {
 	k.cache.RLock()
 	defer k.cache.RUnlock()
 
-	if k.CacheTimeout > 0 && k.cache.lastUpdateMetadata > 0 {
+	if k.MetadataCachePeriod > 0 && k.cache.lastUpdateMetadata > 0 {
 		period := time.Now().UnixNano() - k.cache.lastUpdateMetadata
 
 		if period < 0 {
 			period = -period
 		}
 
-		if period < int64(k.CacheTimeout) {
+		if period < int64(k.MetadataCachePeriod) {
 			return k.cache.lastMetadata, nil
 		}
 	}
 
 	return k.GetMetadata()
-}
-
-// KafkaMetadata is a wrapper around metadata response
-type KafkaMetadata struct {
-	client   *KafkaClient
-	Metadata *proto.MetadataResp
 }
 
 // Topics returns list of known topics
@@ -587,11 +524,50 @@ func (m *KafkaMetadata) Replicas(topic string, partitionID int32) ([]int32, erro
 
 // KafkaConsumer is a wrapper around kafka.Consumer.
 type KafkaConsumer struct {
-	client      *KafkaClient
-	brokerID    int64
-	consumer    kafka.Consumer
-	opened      bool
-	ReadTimeout time.Duration
+	client            *KafkaClient
+	brokerID          int64
+	consumer          kafka.Consumer
+	opened            bool
+	GetMessageTimeout time.Duration
+}
+
+// NewConsumer creates a new Consumer.
+func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID int32, offset int64) (*KafkaConsumer, error) {
+	var err error
+
+	brokerID, err := k.getBroker()
+	if err != nil {
+		return nil, err
+	}
+
+	conf := kafka.NewConsumerConf(topic, partitionID)
+
+	conf.Logger = &kafkaLogger{
+		subsys: "kafka/consumer",
+	}
+
+	conf.RequestTimeout = settings.Consumer.RequestTimeout.Duration
+	conf.RetryLimit = settings.Consumer.RetryLimit
+	conf.RetryWait = settings.Consumer.RetryWait.Duration
+	conf.RetryErrLimit = settings.Consumer.RetryErrLimit
+	conf.RetryErrWait = settings.Consumer.RetryErrWait.Duration
+	conf.MinFetchSize = settings.Consumer.MinFetchSize
+	conf.MaxFetchSize = settings.Consumer.MaxFetchSize
+	conf.StartOffset = offset
+
+	consumer, err := k.allBrokers[brokerID].Consumer(conf)
+	if err != nil {
+		k.freeBroker(brokerID)
+		return nil, err
+	}
+
+	return &KafkaConsumer{
+		client:   k,
+		brokerID: brokerID,
+		consumer: consumer,
+		opened:   true,
+		GetMessageTimeout: settings.Consumer.GetMessageTimeout.Duration,
+	}, nil
 }
 
 // Close frees the connection and returns it to the free pool.
@@ -627,8 +603,8 @@ func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
 	result := make(chan struct{})
 	timeout := make(chan struct{})
 
-	if c.ReadTimeout > 0 {
-		timer := time.AfterFunc(c.ReadTimeout, func() { close(timeout) })
+	if c.GetMessageTimeout > 0 {
+		timer := time.AfterFunc(c.GetMessageTimeout, func() { close(timeout) })
 		defer timer.Stop()
 	}
 
@@ -655,11 +631,38 @@ func (c *KafkaConsumer) Message() (msg *proto.Message, err error) {
 
 // KafkaProducer is a wrapper around kafka.Producer.
 type KafkaProducer struct {
-	client       *KafkaClient
-	brokerID     int64
-	producer     kafka.Producer
-	opened       bool
-	WriteTimeout time.Duration
+	client             *KafkaClient
+	brokerID           int64
+	producer           kafka.Producer
+	opened             bool
+	SendMessageTimeout time.Duration
+}
+
+// NewProducer creates a new Producer.
+func (k *KafkaClient) NewProducer(settings *Config) (*KafkaProducer, error) {
+	brokerID, err := k.getBroker()
+	if err != nil {
+		return nil, err
+	}
+
+	conf := kafka.NewProducerConf()
+
+	conf.Logger = &kafkaLogger{
+		subsys: "kafka/producer",
+	}
+
+	conf.RequestTimeout = settings.Producer.RequestTimeout.Duration
+	conf.RetryLimit = settings.Producer.RetryLimit
+	conf.RetryWait = settings.Producer.RetryWait.Duration
+	conf.RequiredAcks = proto.RequiredAcksAll
+
+	return &KafkaProducer{
+		client:             k,
+		brokerID:           brokerID,
+		producer:           k.allBrokers[brokerID].Producer(conf),
+		opened:             true,
+		SendMessageTimeout: settings.Producer.SendMessageTimeout.Duration,
+	}, nil
 }
 
 // Close frees the connection and returns it to the free pool.
@@ -695,8 +698,8 @@ func (p *KafkaProducer) SendMessage(topic string, partitionID int32, message []b
 	result := make(chan struct{})
 	timeout := make(chan struct{})
 
-	if p.WriteTimeout > 0 {
-		timer := time.AfterFunc(p.WriteTimeout, func() { close(timeout) })
+	if p.SendMessageTimeout > 0 {
+		timer := time.AfterFunc(p.SendMessageTimeout, func() { close(timeout) })
 		defer timer.Stop()
 	}
 
