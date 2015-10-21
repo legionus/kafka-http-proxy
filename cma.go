@@ -11,6 +11,11 @@ import (
 	"sync"
 )
 
+const (
+	MaxInt64 = (1 << 63) - 1
+	MinInt64 = -1 << 63
+)
+
 // CMA is cumulative moving average.
 type CMA struct {
 	sync.RWMutex
@@ -28,8 +33,8 @@ type CMA struct {
 func NewCMA(size int) (res *CMA) {
 	res = &CMA{
 		invalidMinMax: true,
-		min:           0,
-		max:           0,
+		min:           MaxInt64,
+		max:           MinInt64,
 		index:         0,
 		sum:           0,
 		size:          size,
@@ -45,6 +50,12 @@ func (d *CMA) Add(values ...int64) {
 
 	for _, v := range values {
 		if len(d.values) < d.size {
+			if v > d.max {
+				d.max = v
+			}
+			if v < d.min {
+				d.min = v
+			}
 			d.values = append(d.values, v)
 			d.sum += v
 			d.index++
@@ -54,7 +65,13 @@ func (d *CMA) Add(values ...int64) {
 		d.index = d.index % d.size
 
 		if !d.invalidMinMax {
-			d.invalidMinMax = (d.min == d.values[d.index] || d.max == d.values[d.index])
+			if v > d.max {
+				d.max = v
+			} else if v < d.min {
+				d.min = v
+			} else {
+				d.invalidMinMax = (d.min == d.values[d.index] || d.max == d.values[d.index])
+			}
 		}
 
 		d.sum -= d.values[d.index]
@@ -139,8 +156,8 @@ func (d *CMA) updateMinMax() (min int64, max int64) {
 		}
 		i = 2
 	} else {
-			min = d.values[0]
-			max = d.values[0]
+		min = d.values[0]
+		max = d.values[0]
 		i = 1
 	}
 
