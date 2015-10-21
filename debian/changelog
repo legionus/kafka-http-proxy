@@ -1,3 +1,9 @@
+kafka-http-proxy (0.6.5) unstable; urgency=low
+
+  * Find max/min by incoming values.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Wed, 21 Oct 2015 16:09:42 +0300
+
 kafka-http-proxy (0.6.4) unstable; urgency=low
 
   * Fix GetOffsets usage.
