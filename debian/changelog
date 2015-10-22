@@ -1,3 +1,9 @@
+kafka-http-proxy (0.6.6) unstable; urgency=low
+
+  * Add monotone counter in cma.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Thu, 22 Oct 2015 12:13:15 +0300
+
 kafka-http-proxy (0.6.5) unstable; urgency=low
 
   * Find max/min by incoming values.
