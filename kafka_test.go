@@ -255,7 +255,7 @@ func TestConsumerTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to make consumer: %s", err)
 	}
-	consumer.ReadTimeout = time.Second
+	consumer.GetMessageTimeout = time.Second
 
 	msg, err := consumer.Message()
 	if _, ok := err.(KhpError); !ok {
