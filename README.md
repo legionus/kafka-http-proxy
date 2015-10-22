@@ -1,4 +1,4 @@
-## kafka-http-proxy
+## kafka-http-proxy [![Build Status](https://travis-ci.org/legionus/kafka-http-proxy.svg?branch=master)](https://travis-ci.org/legionus/kafka-http-proxy)
 
 The project provides a simple HTTP interface for Apache Kafka to store and
 read JSON messages.
