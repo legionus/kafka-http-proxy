@@ -10,15 +10,15 @@ package main
 import (
 	"github.com/facebookgo/metrics"
 
-	"time"
 	"runtime"
 	"syscall"
+	"time"
 )
 
 // ResponseTimer is wrapper around a decaying simple moving average.
 type ResponseTimer struct {
-	Size   int
-	MA     *CMA
+	Size int
+	MA   *CMA
 }
 
 // CaptureTimer is helper to update ResponseTimer.
@@ -34,15 +34,15 @@ func (c *CaptureTimer) Stop() {
 }
 
 // NewResponseTimer creates new ResponseTimer.
-func NewResponseTimer(size int) (*ResponseTimer) {
+func NewResponseTimer(size int) *ResponseTimer {
 	return &ResponseTimer{
-		Size:   size,
-		MA:     NewCMA(size),
+		Size: size,
+		MA:   NewCMA(size),
 	}
 }
 
 // Start captures the current time.
-func (t ResponseTimer) Start() (*CaptureTimer) {
+func (t ResponseTimer) Start() *CaptureTimer {
 	return &CaptureTimer{
 		timer: t,
 		start: time.Now(),
@@ -56,16 +56,18 @@ func (t ResponseTimer) Add(n int64) {
 
 // SnapshotTimer is a snapshot of the ResponseTimer values.
 type SnapshotTimer struct {
-	Max int64
-	Min int64
-	Avg float64
-	Count int
+	Count uint64
+	Max   int64
+	Min   int64
+	Avg   float64
+	Size  int
 }
 
 // GetSnapshot creates a snapshot of the ResponseTimer values.
 func (t ResponseTimer) GetSnapshot() (res *SnapshotTimer) {
 	res = &SnapshotTimer{}
 	res.Count = t.MA.Count()
+	res.Size = t.MA.Size()
 	res.Avg = t.MA.Mean()
 	res.Min, res.Max = t.MA.MinMax()
 	return
@@ -81,7 +83,7 @@ type MetricStats struct {
 func NewMetricStats() *MetricStats {
 	return &MetricStats{
 		HTTPStatus:       NewHTTPStatus([]int{200, 400, 404, 405, 416, 500, 502, 503}),
-		HTTPResponseTime: NewTimings(600, []string{"GET","POST","GetTopicList","GetTopicInfo","GetPartitionInfo"}),
+		HTTPResponseTime: NewTimings(600, []string{"GET", "POST", "GetTopicList", "GetTopicInfo", "GetPartitionInfo"}),
 	}
 }
 

@@ -21,6 +21,7 @@ type CMA struct {
 	sync.RWMutex
 
 	invalidMinMax bool
+	count         uint64
 	max           int64
 	min           int64
 	index         int
@@ -33,6 +34,7 @@ type CMA struct {
 func NewCMA(size int) (res *CMA) {
 	res = &CMA{
 		invalidMinMax: true,
+		count:         0,
 		min:           MaxInt64,
 		max:           MinInt64,
 		index:         0,
@@ -59,6 +61,7 @@ func (d *CMA) Add(values ...int64) {
 			d.values = append(d.values, v)
 			d.sum += v
 			d.index++
+			d.count++
 			continue
 		}
 
@@ -78,6 +81,7 @@ func (d *CMA) Add(values ...int64) {
 		d.sum += v
 		d.values[d.index] = v
 		d.index++
+		d.count++
 	}
 }
 
@@ -118,12 +122,20 @@ func (d *CMA) Mean() float64 {
 	return float64(d.sum / int64(len(d.values)))
 }
 
-// Count returns current length.
-func (d *CMA) Count() int {
+// Size returns current length.
+func (d *CMA) Size() int {
 	d.RLock()
 	defer d.RUnlock()
 
 	return len(d.values)
+}
+
+// Count returns current length.
+func (d *CMA) Count() uint64 {
+	d.RLock()
+	defer d.RUnlock()
+
+	return d.count
 }
 
 // MinMax returns minimum and maximum of CMA.
