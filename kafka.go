@@ -142,7 +142,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		MetadataCachePeriod:  settings.Broker.MetadataCachePeriod.Duration,
 		GetOffsetsTimeout:    settings.Broker.GetOffsetsTimeout.Duration,
 		ReconnectPeriod:      settings.Broker.ReconnectPeriod.Duration,
-		Timings:              NewTimings(600, []string{"GetMetadata","GetOffsets","GetMessage","SendMessage"}),
+		Timings:              NewTimings([]string{"GetMetadata","GetOffsets","GetMessage","SendMessage"}),
 		allBrokers:           make(map[int64]*kafka.Broker),
 		deadBrokers:          make(chan int64, settings.Broker.NumConns),
 		freeBrokers:          make(chan int64, settings.Broker.NumConns),
