@@ -8,8 +8,8 @@
 package main
 
 import (
-	cfg "gopkg.in/gcfg.v1"
 	log "github.com/Sirupsen/logrus"
+	cfg "gopkg.in/gcfg.v1"
 	_ "net/http/pprof"
 
 	"encoding/json"

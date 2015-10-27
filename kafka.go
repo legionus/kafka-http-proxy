@@ -138,15 +138,15 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 	log.Debug("Gona create broker pool = ", settings.Broker.NumConns)
 
 	client := &KafkaClient{
-		GetMetadataTimeout:   settings.Broker.GetMetadataTimeout.Duration,
-		MetadataCachePeriod:  settings.Broker.MetadataCachePeriod.Duration,
-		GetOffsetsTimeout:    settings.Broker.GetOffsetsTimeout.Duration,
-		ReconnectPeriod:      settings.Broker.ReconnectPeriod.Duration,
-		Timings:              NewTimings([]string{"GetMetadata","GetOffsets","GetMessage","SendMessage"}),
-		allBrokers:           make(map[int64]*kafka.Broker),
-		deadBrokers:          make(chan int64, settings.Broker.NumConns),
-		freeBrokers:          make(chan int64, settings.Broker.NumConns),
-		stopReconnect:        make(chan struct{}),
+		GetMetadataTimeout:  settings.Broker.GetMetadataTimeout.Duration,
+		MetadataCachePeriod: settings.Broker.MetadataCachePeriod.Duration,
+		GetOffsetsTimeout:   settings.Broker.GetOffsetsTimeout.Duration,
+		ReconnectPeriod:     settings.Broker.ReconnectPeriod.Duration,
+		Timings:             NewTimings([]string{"GetMetadata", "GetOffsets", "GetMessage", "SendMessage"}),
+		allBrokers:          make(map[int64]*kafka.Broker),
+		deadBrokers:         make(chan int64, settings.Broker.NumConns),
+		freeBrokers:         make(chan int64, settings.Broker.NumConns),
+		stopReconnect:       make(chan struct{}),
 	}
 
 	brokerID := int64(0)
@@ -563,10 +563,10 @@ func (k *KafkaClient) NewConsumer(settings *Config, topic string, partitionID in
 	}
 
 	return &KafkaConsumer{
-		client:   k,
-		brokerID: brokerID,
-		consumer: consumer,
-		opened:   true,
+		client:            k,
+		brokerID:          brokerID,
+		consumer:          consumer,
+		opened:            true,
 		GetMessageTimeout: settings.Consumer.GetMessageTimeout.Duration,
 	}, nil
 }
