@@ -224,13 +224,13 @@ func (s *Server) initStatistics() {
 
 		kafkaStats := make(map[string]*SnapshotTimer)
 		for name, metric := range s.Client.Timings {
-			kafkaStats[name] = metric.GetSnapshot()
+			kafkaStats[name] = GetSnapshot(metric)
 		}
 		result["Timings"] = kafkaStats
 
 		timeStats := make(map[string]*SnapshotTimer)
 		for name, metric := range s.Stats.HTTPResponseTime {
-			timeStats[name] = metric.GetSnapshot()
+			timeStats[name] = GetSnapshot(metric)
 		}
 		result["Response"] = timeStats
 
