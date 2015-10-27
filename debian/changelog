@@ -1,3 +1,9 @@
+kafka-http-proxy (0.6.7) unstable; urgency=low
+
+  * Use facebook/metrics again.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 27 Oct 2015 18:24:40 +0300
+
 kafka-http-proxy (0.6.6) unstable; urgency=low
 
   * Add monotone counter in cma.
