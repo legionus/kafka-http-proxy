@@ -8,6 +8,7 @@
 package main
 
 import (
+	"github.com/facebookgo/metrics"
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
 
@@ -119,7 +120,7 @@ type KafkaClient struct {
 		lastUpdateMetadata int64
 	}
 
-	Timings map[string]*ResponseTimer
+	Timings map[string]metrics.Timer
 }
 
 // NewClient creates new KafkaClient

@@ -56,27 +56,47 @@ func (t ResponseTimer) Add(n int64) {
 
 // SnapshotTimer is a snapshot of the ResponseTimer values.
 type SnapshotTimer struct {
-	Count uint64
-	Max   int64
 	Min   int64
+	Max   int64
 	Avg   float64
-	Size  int
+	Count int64
+
+	Rate1   float64
+	Rate5   float64
+	Rate15  float64
+	RateAvg float64
+
+	Percentile01  float64
+	Percentile05  float64
+	Percentile075 float64
+	Percentile095 float64
+	Percentile099 float64
 }
 
 // GetSnapshot creates a snapshot of the ResponseTimer values.
-func (t ResponseTimer) GetSnapshot() (res *SnapshotTimer) {
-	res = &SnapshotTimer{}
-	res.Count = t.MA.Count()
-	res.Size = t.MA.Size()
-	res.Avg = t.MA.Mean()
-	res.Min, res.Max = t.MA.MinMax()
+func GetSnapshot(s metrics.Timer) (res *SnapshotTimer) {
+	res = &SnapshotTimer{
+		Min:           s.Min(),
+		Max:           s.Max(),
+		Avg:           s.Mean(),
+		Count:         s.Count(),
+		Rate1:         s.Rate1(),
+		Rate5:         s.Rate5(),
+		Rate15:        s.Rate15(),
+		RateAvg:       s.RateMean(),
+		Percentile01:  s.Percentile(0.1),
+		Percentile05:  s.Percentile(0.5),
+		Percentile075: s.Percentile(0.75),
+		Percentile095: s.Percentile(0.95),
+		Percentile099: s.Percentile(0.99),
+	}
 	return
 }
 
 // MetricStats contains statistics about HTTP responses.
 type MetricStats struct {
 	HTTPStatus       map[int]metrics.Counter
-	HTTPResponseTime map[string]*ResponseTimer
+	HTTPResponseTime map[string]metrics.Timer
 }
 
 // NewMetricStats creates new MetricStats object.
@@ -130,12 +150,21 @@ func NewHTTPStatus(codes []int) map[int]metrics.Counter {
 	return HTTPStatus
 }
 
-func NewTimings(size int, names []string) map[string]*ResponseTimer {
-	res := make(map[string]*ResponseTimer)
+func NewTimings(size int, names []string) map[string]metrics.Timer {
+	res := make(map[string]metrics.Timer)
 
 	for _, name := range names {
-		res[name] = NewResponseTimer(size)
+		res[name] = metrics.NewTimer()
 	}
+
+	go func() {
+		for {
+			for _, name := range names {
+				res[name].Tick()
+			}
+			time.Sleep(metrics.TickDuration)
+		}
+	}()
 
 	return res
 }
