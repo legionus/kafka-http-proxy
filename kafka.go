@@ -120,7 +120,8 @@ type KafkaClient struct {
 		lastUpdateMetadata int64
 	}
 
-	Timings map[string]metrics.Timer
+	Timings  map[string]metrics.Timer
+	Counters map[string]metrics.Counter
 }
 
 // NewClient creates new KafkaClient
@@ -143,6 +144,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 		GetOffsetsTimeout:   settings.Broker.GetOffsetsTimeout.Duration,
 		ReconnectPeriod:     settings.Broker.ReconnectPeriod.Duration,
 		Timings:             NewTimings([]string{"GetMetadata", "GetOffsets", "GetMessage", "SendMessage"}),
+		Counters:            NewCounters([]string{"DeadBrokers", "FreeBrokers"}),
 		allBrokers:          make(map[int64]*kafka.Broker),
 		deadBrokers:         make(chan int64, settings.Broker.NumConns),
 		freeBrokers:         make(chan int64, settings.Broker.NumConns),
@@ -212,6 +214,7 @@ func NewClient(settings *Config) (*KafkaClient, error) {
 			case <-client.stopReconnect:
 				return
 			}
+			client.Counters["DeadBrokers"].Dec(1)
 
 			go func(id int64) {
 				client.allBrokers[id].Close()
@@ -246,6 +249,7 @@ func (k *KafkaClient) getBroker() (int64, error) {
 	select {
 	case brokerID, ok := <-k.freeBrokers:
 		if ok {
+			k.Counters["FreeBrokers"].Dec(1)
 			return brokerID, nil
 		}
 	default:
@@ -258,10 +262,12 @@ func (k *KafkaClient) getBroker() (int64, error) {
 
 func (k *KafkaClient) freeBroker(brokerID int64) {
 	k.freeBrokers <- brokerID
+	k.Counters["FreeBrokers"].Inc(1)
 }
 
 func (k *KafkaClient) deadBroker(brokerID int64) {
 	k.deadBrokers <- brokerID
+	k.Counters["DeadBrokers"].Inc(1)
 }
 
 // GetOffsets returns oldest and newest offsets for partition.

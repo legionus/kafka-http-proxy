@@ -222,6 +222,12 @@ func (s *Server) initStatistics() {
 
 		result["MessageSize"] = msgSize
 
+		kafkaCounters := make(map[string]int64)
+		for name, metric := range s.Client.Counters {
+			kafkaCounters[name] = metric.Count()
+		}
+		result["Counters"] = kafkaCounters
+
 		kafkaStats := make(map[string]*SnapshotTimer)
 		for name, metric := range s.Client.Timings {
 			kafkaStats[name] = GetSnapshot(metric)

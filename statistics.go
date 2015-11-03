@@ -109,6 +109,17 @@ func NewHTTPStatus(codes []int) map[int]metrics.Counter {
 	return HTTPStatus
 }
 
+// NewCounters creates map of counters
+func NewCounters(names []string) map[string]metrics.Counter {
+	res := make(map[string]metrics.Counter)
+
+	for _, name := range names {
+		res[name] = metrics.NewCounter()
+	}
+	return res
+}
+
+// NewTimings creates map of timings
 func NewTimings(names []string) map[string]metrics.Timer {
 	res := make(map[string]metrics.Timer)
 
