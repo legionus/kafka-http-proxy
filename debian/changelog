@@ -1,3 +1,9 @@
+kafka-http-proxy (0.6.9) unstable; urgency=low
+
+  * Rebuilt with new github.com/optiopay/kafka.
+
+ -- Gladkov Alexey <gladkov.alexey@gmail.com>  Tue, 10 Nov 2015 16:14:08 +0300
+
 kafka-http-proxy (0.6.8) unstable; urgency=low
 
   * Add statistics about the use of brokers.
